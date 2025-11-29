@@ -1,1329 +1,2255 @@
 # -*- coding: utf-8 -*-
+"""
+LP9 - Coach IA Serge - VERSION AMÉLIORÉE
+Modifications:
+- Boutons du formulaire plus visibles
+- Suppression du taux de complétion
+- Suppression de la météo en double (une seule section)
+- Suppression du bouton "Modifier mon profil"
+- Champs de formulaire plus hauts pour meilleure lisibilité
+- Correction mise à jour "Prochain entraînement" après enregistrement
+- Météo corrigée (Open-Meteo)
+- Respect du nombre de séances/semaine dans le plan IA
+- Chatbot capable de proposer/appliquer des remplacements dans le plan
+- Plan nutritionnel sur 7 jours complets
+"""
+
 import os
 import re
 import json
 import requests
 import datetime as dt
-
 import streamlit as st
 from streamlit.components.v1 import html
+import logging
+
+# ===================== CONFIGURATION LOGGING =====================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('coach_app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # ===================== PAGE CONFIG =====================
-st.set_page_config(page_title="Coach IA – Serge Pro Edition", page_icon="🏋️", layout="wide")
+st.set_page_config(
+    page_title="Coach IA – Serge Pro Edition",
+    page_icon="🏋️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# ===================== STYLE =====================
+# ===================== STYLE CSS MODERNE =====================
 st.markdown("""
 <style>
-  * {font-family: 'Poppins', sans-serif;}
-  .small-muted { color: #6b7280; font-size: 0.9rem; }
-  .fc { font-family: 'Poppins', sans-serif; }
+    /* Reset & Base */
+    * {
+        box-sizing: border-box;
+    }
+    
+    .main > div {
+        padding-top: 2rem;
+    }
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #1e1e1e;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #3ea6ff;
+        border-radius: 4px;
+    }
+    
+    /* Typography */
+    h1, h2, h3 {
+        font-family: 'Inter', sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+    
+    /* Cards */
+    .custom-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
+        transition: transform 0.2s ease;
+    }
+    
+    .custom-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    }
+    
+    .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border-left: 4px solid #3ea6ff;
+    }
+    
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #3ea6ff;
+        margin: 0;
+    }
+    
+    .stat-label {
+        font-size: 0.875rem;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 0.5rem;
+    }
+    
+    /* Weather Card */
+    .weather-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .weather-temp {
+        font-size: 3rem;
+        font-weight: 700;
+        margin: 0;
+    }
+    
+    .weather-condition {
+        font-size: 1.25rem;
+        opacity: 0.9;
+    }
+    
+    /* Quote Card */
+    .quote-card {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 12px;
+        font-style: italic;
+        font-size: 1.125rem;
+        line-height: 1.6;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    /* Buttons - FORMULAIRE PLUS VISIBLE */
+    .stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #3ea6ff 0%, #667eea 100%);
+        color: white;
+        border: 3px solid #2d8dd9;
+        padding: 1rem 2rem;
+        font-size: 1.25rem;
+        font-weight: 700;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 6px 12px rgba(62, 166, 255, 0.4);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #2d8dd9 0%, #5568d3 100%);
+        transform: translateY(-3px);
+        box-shadow: 0 10px 20px rgba(62, 166, 255, 0.6);
+        border-color: #1e6bb8;
+    }
+    
+    .stButton > button:active {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(62, 166, 255, 0.4);
+    }
+    
+    /* Progress bars */
+    .stProgress > div > div {
+        background: linear-gradient(90deg, #3ea6ff 0%, #667eea 100%);
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 12px 24px;
+        background-color: #f0f2f6;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #3ea6ff 0%, #667eea 100%);
+        color: white;
+    }
+    
+    /* Inputs - HAUTEUR AUGMENTÉE POUR LISIBILITÉ */
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input {
+        border-radius: 8px;
+        border: 2px solid #e0e0e0;
+        padding: 1rem 0.75rem;
+        font-size: 1.1rem;
+        min-height: 50px;
+    }
+    
+    .stSelectbox > div > div > div {
+        border-radius: 8px;
+        border: 2px solid #e0e0e0;
+        padding: 0.75rem;
+        font-size: 1.1rem;
+        min-height: 50px;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stNumberInput > div > div > input:focus {
+        border-color: #3ea6ff;
+        box-shadow: 0 0 0 1px #3ea6ff;
+    }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
+    }
+    
+    [data-testid="stSidebar"] * {
+        color: white !important;
+    }
+    
+    /* Alerts */
+    .stAlert {
+        border-radius: 8px;
+        border-left: 4px solid;
+    }
+    
+    /* Chat messages */
+    .chat-message {
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-radius: 8px;
+        max-width: 80%;
+    }
+    
+    .user-message {
+        background: #e3f2fd;
+        margin-left: auto;
+        text-align: right;
+    }
+    
+    .assistant-message {
+        background: #f5f5f5;
+        margin-right: auto;
+    }
+    
+    /* Calendar */
+    .calendar-event {
+        background: #3ea6ff;
+        color: white;
+        padding: 0.5rem;
+        border-radius: 6px;
+        margin: 0.25rem 0;
+        font-size: 0.875rem;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .stat-number {
+            font-size: 2rem;
+        }
+        
+        .weather-temp {
+            font-size: 2rem;
+        }
+        
+        .quote-card {
+            font-size: 1rem;
+            padding: 1.5rem;
+        }
+    }
+    
+    /* Landing page */
+    .landing-title {
+        font-size: 4rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, #3ea6ff 0%, #667eea 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    
+    .landing-subtitle {
+        font-size: 1.5rem;
+        color: #ccc;
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+    
+    /* Form navigation */
+    .form-progress {
+        background: #f0f2f6;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+    
+    .form-progress-bar {
+        background: #e0e0e0;
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .form-progress-fill {
+        background: linear-gradient(90deg, #3ea6ff 0%, #667eea 100%);
+        height: 100%;
+        transition: width 0.3s ease;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ===================== STATE =====================
+# ===================== STATE INITIALIZATION =====================
 def _init_state():
+    """Initialise l'état de session avec valeurs par défaut"""
     defaults = {
+        # Navigation
         "step": "landing",
         "q_index": 0,
         "answers": {},
-        "active_card": None,
+        "page": None,
+        
+        # Plans et contenu
         "plan_text": "",
-        "plan_edit_mode": False,   # << NEW
-        "api_key": "",
-        "chat_messages": [
-            {"role": "system", "content": (
-                "Tu es Serge, un coach sportif professionnel. "
+        "plan_edit_mode": False,
+        "nutrition_plan": None,
+        "nutrition_edit_mode": False,
+        
+        # API (clé lue via env var ou sidebar)
+        "api_key": os.getenv("OPENAI_API_KEY", ""),
+        
+        # Profil
+        "user_name": "Athlète",
+        "user_email": "",
+        "user_dob": dt.date.today(),
+        "user_gender": "Homme",
+        "city": "Montreal",
+        "country": "Canada",
+        "user_bio": "",
+        "avatar_url": "",
+        
+        # Objectifs
+        "goal_type": "Maintien",
+        "current_weight": 70.0,
+        "target_weight": 65.0,
+        "training_frequency": 3,
+        "training_duration": 45,
+        "target_date": dt.date.today() + dt.timedelta(days=90),
+        
+        # Params
+        "notifications_enabled": True,
+        "notification_time": dt.time(8, 0),
+        "weight_unit": "Kilogrammes (kg)",
+        "distance_unit": "Kilomètres (km)",
+        "language": "Français",
+        
+        # History
+        "completed_workouts": [],
+        "chat_messages": [{
+            "role": "system",
+            "content": (
+                "Tu es Serge, un coach sportif professionnel certifié. "
                 "Tu aides les utilisateurs avec leurs questions sur l'entraînement, "
                 "la nutrition, la récupération et la motivation. Réponds de façon "
                 "concise, encourageante et professionnelle."
-            )}
-        ],
-        # WhatsApp config
+            )
+        }],
+        "chat_history": [],
+        
+        # WhatsApp
         "whatsapp_phone_number_id": "",
         "whatsapp_access_token": "",
         "whatsapp_api_version": "v18.0",
         "recipient_phone": "",
-        "notifications_enabled": False,
         "reminder_days": [1, 3, 5],
         "message_template_name": "reminder_workout",
-        # Nutrition
-        "nutrition_plan": None,
-        "nutrition_edit_mode": False,
-        # Chat historique simple
-        "chat_history": [],
-        # Calendar
+        
+        # Calendrier
         "calendar_start_date": dt.date.today(),
         "calendar_events": [],
         "_last_plan_hash": None,
+        
         # Workout history
         "workout_history": [],
-        # Routing page courante
-        "page": None,
-        # Flash visual
+        
+        # État visuel
         "flash_plan_updated": False,
+        "active_card": None,
+        
+        # Dernière séance complétée
+        "last_completed_day": None,
+
+        # Modification de plan en attente (via chat)
+        "pending_plan_change": None,
     }
+    
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+            logger.debug(f"Initialized state: {k}")
+
 _init_state()
 
-# ===================== WHATSAPP SENDER =====================
+# ===================== WHATSAPP FUNCTIONS =====================
 def send_whatsapp_text_message(to_number: str, message: str) -> bool:
+    """Envoie un message texte via WhatsApp Business API"""
     try:
-        if not st.session_state.whatsapp_phone_number_id or not st.session_state.whatsapp_access_token:
+        phone_id = st.session_state.whatsapp_phone_number_id
+        token = st.session_state.whatsapp_access_token
+        version = st.session_state.whatsapp_api_version
+        
+        if not phone_id or not token:
+            logger.warning("WhatsApp credentials missing")
             st.error("⚠️ Identifiants WhatsApp Business API manquants")
             return False
-        url = f"https://graph.facebook.com/{st.session_state.whatsapp_api_version}/{st.session_state.whatsapp_phone_number_id}/messages"
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {st.session_state.whatsapp_access_token}"}
-        data = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to_number,
-                "type": "text", "text": {"preview_url": False, "body": message}}
+        
+        url = f"https://graph.facebook.com/{version}/{phone_id}/messages"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to_number,
+            "type": "text",
+            "text": {"preview_url": False, "body": message}
+        }
+        
+        logger.info(f"Sending WhatsApp message to {to_number[:4]}***")
         response = requests.post(url, headers=headers, data=json.dumps(data), timeout=30)
-        return response.status_code == 200
+        
+        if response.status_code == 200:
+            logger.info("WhatsApp message sent successfully")
+            return True
+        else:
+            logger.error(f"WhatsApp API error: {response.status_code}")
+            return False
+            
+    except requests.exceptions.Timeout:
+        logger.error("WhatsApp API timeout")
+        st.error("❌ Timeout lors de l'envoi WhatsApp")
+        return False
     except Exception as e:
-        st.error(f"❌ Erreur lors de l'envoi: {str(e)}")
+        logger.error(f"WhatsApp error: {str(e)}", exc_info=True)
+        st.error(f"❌ Erreur WhatsApp: {str(e)}")
         return False
 
 def send_whatsapp_template_message(to_number: str, template_name: str, template_params: list = None) -> bool:
+    """Envoie un message template via WhatsApp"""
     try:
-        if not st.session_state.whatsapp_phone_number_id or not st.session_state.whatsapp_access_token:
-            st.error("⚠️ Identifiants WhatsApp Business API manquants")
+        phone_id = st.session_state.whatsapp_phone_number_id
+        token = st.session_state.whatsapp_access_token
+        version = st.session_state.whatsapp_api_version
+        
+        if not phone_id or not token:
+            st.error("⚠️ Identifiants WhatsApp manquants")
             return False
-        url = f"https://graph.facebook.com/{st.session_state.whatsapp_api_version}/{st.session_state.whatsapp_phone_number_id}/messages"
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {st.session_state.whatsapp_access_token}"}
+        
+        url = f"https://graph.facebook.com/{version}/{phone_id}/messages"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+        
         components = []
         if template_params:
-            parameters = [{"type": "text", "text": param} for param in template_params]
+            parameters = [{"type": "text", "text": str(param)} for param in template_params]
             components.append({"type": "body", "parameters": parameters})
-        data = {"messaging_product": "whatsapp", "to": to_number, "type": "template",
-                "template": {"name": template_name, "language": {"code": "fr"}, "components": components}}
+        
+        data = {
+            "messaging_product": "whatsapp",
+            "to": to_number,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": "fr"},
+                "components": components
+            }
+        }
+        
+        logger.info(f"Sending WhatsApp template '{template_name}'")
         response = requests.post(url, headers=headers, data=json.dumps(data), timeout=30)
+        
         return response.status_code == 200
+        
     except Exception as e:
-        st.error(f"❌ Erreur lors de l'envoi: {str(e)}")
+        logger.error(f"WhatsApp template error: {str(e)}")
+        st.error(f"❌ Erreur: {str(e)}")
         return False
 
-def generate_reminder_params(day_number: int, profile: dict) -> list:
-    nom = profile.get("nom", "Champion")
-    duree = profile.get("duree_min", 30)
-    return [nom, str(day_number), f"{duree} minutes"]
+def validate_phone_number(phone: str) -> bool:
+    """Valide un numéro de téléphone"""
+    if not phone or not phone.isdigit():
+        return False
+    return 10 <= len(phone) <= 15
 
-# ===================== SIDEBAR =====================
+# ===================== SIDEBAR NAVIGATION =====================
 with st.sidebar:
-    st.subheader("🔧 Paramètres")
-    st.session_state.api_key = st.text_input("OpenAI API Key (optionnel)", value=st.session_state.api_key, type="password", key="sb_api_key")
+    st.title("🏋️ Coach Serge Pro")
+    st.markdown("---")
+    
+    # API Configuration
+    st.subheader("🔧 Configuration OpenAI")
+    
+    api_key_input = st.text_input(
+        "Clé API OpenAI",
+        value=st.session_state.api_key,
+        type="password",
+        help="Colle ici ta clé OpenAI (ne sera pas affichée en clair)",
+        key="sidebar_openai_key"
+    )
 
-with st.sidebar:
-    st.divider()
+    if api_key_input:
+        if not api_key_input.startswith("sk-"):
+            st.warning("⚠️ Format de clé invalide")
+        else:
+            st.session_state.api_key = api_key_input
+            st.success("✅ Clé API configurée")
+            logger.info("API key configured")
+    else:
+        if st.session_state.api_key:
+            st.success("✅ Clé API chargée depuis l'environnement")
+        else:
+            st.info("Ajoute ta clé API OpenAI pour activer l'IA.")
+    
+    st.markdown("---")
+    
+    # WhatsApp Section
     st.subheader("📱 Notifications WhatsApp")
-    with st.expander("⚙️ Configuration API WhatsApp", expanded=False):
-        st.info("Renseigne les identifiants de ton compte WhatsApp Business API.")
-        st.session_state.whatsapp_phone_number_id = st.text_input("Phone Number ID", value=st.session_state.whatsapp_phone_number_id, type="password", key="sb_wa_phone_id")
-        st.session_state.whatsapp_access_token   = st.text_input("Access Token", value=st.session_state.whatsapp_access_token, type="password", key="sb_wa_token")
-        st.session_state.whatsapp_api_version    = st.text_input("Version de l'API", value=st.session_state.whatsapp_api_version, key="sb_wa_version")
-        st.session_state.message_template_name   = st.text_input("Nom du template de rappel", value=st.session_state.message_template_name, key="sb_wa_tpl")
-
-    st.session_state.notifications_enabled = st.toggle("🔔 Activer les rappels WhatsApp", value=st.session_state.notifications_enabled, key="sb_toggle_notify")
-    if st.session_state.notifications_enabled:
-        st.session_state.recipient_phone = st.text_input("📞 Numéro (sans +)", value=st.session_state.recipient_phone, key="sb_recipient")
+    
+    with st.expander("⚙️ Configuration WhatsApp API", expanded=False):
+        st.info("Configure ton compte WhatsApp Business API")
+        
+        phone_id = st.text_input(
+            "Phone Number ID",
+            value=st.session_state.whatsapp_phone_number_id,
+            type="password",
+            key="sidebar_wa_phone"
+        )
+        
+        access_token = st.text_input(
+            "Access Token",
+            value=st.session_state.whatsapp_access_token,
+            type="password",
+            key="sidebar_wa_token"
+        )
+        
+        api_version = st.text_input(
+            "API Version",
+            value=st.session_state.whatsapp_api_version,
+            key="sidebar_wa_version"
+        )
+        
+        template_name = st.text_input(
+            "Template de rappel",
+            value=st.session_state.message_template_name,
+            key="sidebar_wa_template"
+        )
+        
+        st.session_state.whatsapp_phone_number_id = phone_id
+        st.session_state.whatsapp_access_token = access_token
+        st.session_state.whatsapp_api_version = api_version
+        st.session_state.message_template_name = template_name
+    
+    notifications = st.toggle(
+        "🔔 Activer les rappels",
+        value=st.session_state.notifications_enabled,
+        key="sidebar_notifications"
+    )
+    st.session_state.notifications_enabled = notifications
+    
+    if notifications:
+        recipient = st.text_input(
+            "📞 Numéro destinataire",
+            value=st.session_state.recipient_phone,
+            placeholder="Ex: 15141234567",
+            help="Format international sans +",
+            key="sidebar_recipient"
+        )
+        st.session_state.recipient_phone = recipient
+        
+        if recipient and not validate_phone_number(recipient):
+            st.warning("⚠️ Numéro invalide")
+        
         st.write("**Jours de rappel:**")
         cols = st.columns(4)
-        selected_days = []
+        selected = []
         for i in range(1, 8):
             with cols[(i-1) % 4]:
-                if st.checkbox(f"J{i}", value=i in st.session_state.reminder_days, key=f"sb_day_{i}"):
-                    selected_days.append(i)
-        st.session_state.reminder_days = selected_days
-
+                if st.checkbox(
+                    f"J{i}",
+                    value=i in st.session_state.reminder_days,
+                    key=f"sidebar_day_{i}"
+                ):
+                    selected.append(i)
+        st.session_state.reminder_days = selected
+        
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("🧪 Test texte", use_container_width=True, key="sb_test_text"):
-                if not st.session_state.recipient_phone:
-                    st.warning("⚠️ Entre un numéro")
+            if st.button("🧪 Test", use_container_width=True, key="sidebar_test"):
+                if recipient and validate_phone_number(recipient):
+                    success = send_whatsapp_text_message(
+                        recipient,
+                        "🏋️ Test Coach Serge!\n\nLes notifications fonctionnent! 💪"
+                    )
+                    if success:
+                        st.success("✅ Envoyé!")
+                    else:
+                        st.error("❌ Échec")
                 else:
-                    if send_whatsapp_text_message(st.session_state.recipient_phone, "🏋️ Test Coach Serge IA!\n\nLes notifications fonctionnent! 💪"):
-                        st.success("✅ Message envoyé!")
-        with c2:
-            if st.button("🧪 Test template", use_container_width=True, key="sb_test_tpl"):
-                if not st.session_state.recipient_phone:
-                    st.warning("⚠️ Entre un numéro")
-                else:
-                    if send_whatsapp_template_message(st.session_state.recipient_phone, st.session_state.message_template_name, ["Champion", "1", "30 minutes"]):
-                        st.success("✅ Template envoyé!")
+                    st.warning("⚠️ Entre un numéro valide")
+    
+    st.markdown("---")
+    
+    debug_mode = st.checkbox("🐛 Mode debug", value=False, key="sidebar_debug")
+    if debug_mode:
+        st.write(f"**Step:** {st.session_state.step}")
+        st.write(f"**Page:** {st.session_state.page}")
+        st.write(f"**Q-index:** {st.session_state.q_index}")
 
-# ===================== QUESTIONNAIRE =====================
+# ===================== QUESTIONNAIRE CONSTANTS =====================
 QUESTIONS = [
     {"key":"age","label":"Quel est ton âge?","type":"number","min":13,"max":100},
     {"key":"sexe","label":"Quel est ton sexe?","type":"select","options":["Homme","Femme","Autre / Préfère ne pas dire"]},
     {"key":"taille_cm","label":"Quelle est ta taille (en cm)?","type":"number","min":120,"max":220},
     {"key":"poids_kg","label":"Quel est ton poids (en kg)?","type":"number","min":35,"max":220},
-    {"key":"niveau_exp","label":"Quel est ton niveau d'expérience en entraînement?","type":"select","options":["Débutant","Intermédiaire","Expert"]},
-    {"key":"blessures","label":"As-tu actuellement des blessures ou des limitations physiques?","type":"text"},
+    {"key":"niveau_exp","label":"Quel est ton niveau d'expérience en entraînement?","type":"select",
+     "options":["Débutant","Intermédiaire","Avancé","Expert"]},
+    {"key":"blessures","label":"As-tu actuellement des blessures ou des limitations physiques?","type":"text",
+     "help":"Indique toute blessure pour qu'on adapte les exercices"},
     {"key":"sante","label":"As-tu des problèmes de santé connus (asthme, hypertension, diabète, etc.)?","type":"text"},
-    {"key":"activite","label":"Quel est ton niveau d'activité physique au quotidien (hors entraînements)?","type":"select","options":[
-        "Peu actif (Travail de bureau)","Modérément actif (Marche régulière)","Actif (Travail physique)","Très actif (Sports fréquents)"]},
-    {"key":"objectif_principal","label":"Quel est ton objectif principal d'entraînement?","type":"text"},
-    {"key":"objectif_secondaire","label":"As-tu un objectif secondaire?","type":"text"},
-    {"key":"horizon","label":"Dans combien de temps veux-tu atteindre ton objectif principal?","type":"select","options":["3 mois","6 mois","1 an ou plus"]},
+    {"key":"activite","label":"Quel est ton niveau d'activité physique au quotidien (hors entraînements)?","type":"select",
+     "options":["Peu actif (Travail de bureau)","Modérément actif (Marche régulière)",
+                "Actif (Travail physique)","Très actif (Sports fréquents)"]},
+    {"key":"objectif_principal","label":"Quel est ton objectif principal d'entraînement?","type":"text",
+     "help":"Sois précis: perte de poids, gain musculaire, endurance, force..."},
+    {"key":"objectif_secondaire","label":"As-tu un objectif secondaire?","type":"text","help":"Optionnel"},
+    {"key":"horizon","label":"Dans combien de temps veux-tu atteindre ton objectif principal?","type":"select",
+     "options":["3 mois","6 mois","1 an","Plus d'un an"]},
     {"key":"motivation","label":"Quel est ton niveau de motivation sur 10?","type":"slider","min":1,"max":10},
-    {"key":"types_exos","label":"Quel type d'exercices préfères-tu?","type":"multiselect","options":["Musculation","Cardio","Sports collectifs","Yoga / Pilates","Autre"]},
-    {"key":"jours_sem","label":"Combien de jours par semaine veux-tu t'entrainer?","type":"slider","min":1,"max":7},
-    {"key":"duree_min","label":"Combien de temps veux-tu consacrer à chaque séance (en min)?","type":"slider","min":10,"max":120,"step":5},
-    {"key":"moment","label":"À quel moment de la journée préfères-tu t'entraîner?","type":"select","options":["Matin","Midi","Après-midi","Soir / Nuit"]},
-    {"key":"lieu","label":"Préfères-tu t'entraîner à l'intérieur ou dehors?","type":"select","options":["Intérieur","Extérieur","Peu importe"]},
-    {"key":"materiel","label":"Quel matériel d'entraînement as-tu à ta disposition?","type":"text"},
+    {"key":"types_exos","label":"Quel type d'exercices préfères-tu?","type":"multiselect",
+     "options":["Musculation","Cardio (course, vélo...)","HIIT (haute intensité)",
+                "Sports collectifs","Yoga / Pilates","Natation","Autre"]},
+    {"key":"jours_sem","label":"Combien de jours par semaine veux-tu t'entraîner?","type":"slider","min":1,"max":7},
+    {"key":"duree_min","label":"Combien de temps veux-tu consacrer à chaque séance (en min)?","type":"slider",
+     "min":15,"max":120,"step":5},
+    {"key":"moment","label":"À quel moment de la journée préfères-tu t'entraîner?","type":"select",
+     "options":["Matin (6h-10h)","Midi (11h-14h)","Après-midi (15h-18h)","Soir / Nuit (19h+)"]},
+    {"key":"lieu","label":"Préfères-tu t'entraîner à l'intérieur ou dehors?","type":"select",
+     "options":["Intérieur (gym, maison)","Extérieur (parc, rue...)","Peu importe"]},
+    {"key":"materiel","label":"Quel matériel d'entraînement as-tu à ta disposition?","type":"text",
+     "help":"Liste le matériel disponible"},
     {"key":"sommeil_h","label":"Combien d'heures dors-tu en moyenne par nuit?","type":"slider","min":4.0,"max":12.0,"step":0.5},
     {"key":"ville","label":"Dans quelle ville t'entraînes-tu (pour la météo)?","type":"text"},
-    {"key":"nutrition","label":"Souhaite-tu recevoir des conseils de nutrition et/ou de récupération?","type":"select","options":["Oui","Non"]},
+    {"key":"nutrition","label":"Souhaites-tu recevoir des conseils de nutrition et/ou de récupération?","type":"select",
+     "options":["Oui, absolument","Oui, si possible","Non merci"]},
 ]
+
 TOTAL_Q = len(QUESTIONS)
 
-# ===================== OPENAI (optionnel) =====================
+# ===================== OPENAI FUNCTIONS =====================
 def call_openai_plan(api_key: str, profile: dict) -> str:
+    """Génère un plan d'entraînement via OpenAI en respectant le nb de séances/semaine."""
     try:
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        system_prompt = (
-            "You are a certified fitness coach. Generate a safe, concise 7-day plan "
-            "tailored to the JSON profile. Each day: Day X — Session; Duration; "
-            "Exercises (Sets x Reps); RPE. Add short recovery/nutrition tips if requested."
-        )
-        body = {"model": "gpt-4o-mini","messages": [
-                    {"role":"system","content":system_prompt},
-                    {"role":"user","content":f"User profile (JSON): {json.dumps(profile, ensure_ascii=False)}"}
-                ],
-                "max_tokens": 700, "temperature": 0.7}
-        r = requests.post(url, headers=headers, json=body, timeout=60)
-        if r.status_code == 200:
-            data = r.json()
-            return data["choices"][0]["message"]["content"]
-        return ""
-    except Exception:
-        return ""
+        if not api_key or not api_key.startswith("sk-"):
+            logger.warning("Invalid API key for plan generation")
+            return ""
 
-def call_openai_chat(api_key: str, user_input: str, profile: dict) -> str:
-    try:
+        try:
+            jours_sem = int(profile.get("jours_sem") or 3)
+        except Exception:
+            jours_sem = 3
+        jours_sem = max(1, min(7, jours_sem))
+
         url = "https://api.openai.com/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
         system_prompt = (
-            "Tu es un coach sportif personnel expert. Tu aides l'utilisateur avec ses questions "
-            "sur l'entraînement, la nutrition et la santé. Réponds de manière concise et pratique. "
-            f"Voici le profil de l'utilisateur: {json.dumps(profile, ensure_ascii=False)}"
+            "Tu es un coach sportif certifié professionnel.\n"
+            f"L'utilisateur souhaite s'entraîner **{jours_sem} jours par semaine**.\n\n"
+            "GENÈRE un plan d'entraînement personnalisé sur **7 jours** au format Markdown.\n"
+            "- Utilise des sections claires du type : **Jour X — Titre**.\n"
+            "- Pour chaque **jour d'entraînement** (il doit y en avoir exactement "
+            f"{jours_sem} sur 7) indique : durée, exercices (séries x reps) et RPE (1-10), "
+            "ainsi que des conseils de récupération.\n"
+            "- Pour les **jours de repos**, écris clairement : **Jour X — Repos complet** "
+            "et ne propose AUCUN exercice, AUCUNE activité physique, même pas de "
+            "« récupération active ».\n"
+            "- Respecte les blessures, le matériel disponible et le niveau de l'utilisateur."
         )
-        body = {"model":"gpt-4o-mini","messages":[
-            {"role":"system","content":system_prompt},
-            {"role":"user","content": user_input}
-        ],"max_tokens":500,"temperature":0.7}
-        r = requests.post(url, headers=headers, json=body, timeout=60)
-        if r.status_code == 200:
-            return r.json()["choices"][0]["message"]["content"]
-        return "Je n'ai pas pu contacter le modèle pour une réponse détaillée."
+
+        body = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Profil utilisateur: {json.dumps(profile, ensure_ascii=False)}"}
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.7
+        }
+
+        logger.info("Calling OpenAI API for workout plan")
+        response = requests.post(url, headers=headers, json=body, timeout=60)
+
+        if response.status_code == 200:
+            data = response.json()
+            plan = data["choices"][0]["message"]["content"]
+            logger.info("Plan generated successfully")
+            return plan
+        else:
+            logger.error(f"OpenAI API error: {response.status_code}")
+            return ""
+
+    except requests.exceptions.Timeout:
+        logger.error("OpenAI API timeout")
+        st.error("❌ Timeout - L'API OpenAI ne répond pas")
+        return ""
     except Exception as e:
-        return f"Erreur: {e}"
-
-def call_openai_nutrition(api_key: str, profile: dict) -> str:
-    try:
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        system_prompt = (
-            "Tu es un nutritionniste certifié. Crée un plan de nutrition pour 7 jours "
-            "basé sur le profil JSON de l'utilisateur. Inclure pour chaque jour : "
-            "Petit-déjeuner, Dîner, Souper, Collations, et un total calorique estimé. "
-            "Adapter selon l'objectif et le niveau d'activité. Présente le plan de façon lisible."
-        )
-        body = {"model":"gpt-4o-mini","messages":[
-            {"role":"system","content":system_prompt},
-            {"role":"user","content": f"Profil utilisateur : {json.dumps(profile, ensure_ascii=False)}"}
-        ],"max_tokens":700,"temperature":0.7}
-        r = requests.post(url, headers=headers, json=body, timeout=60)
-        if r.status_code == 200:
-            return r.json()["choices"][0]["message"]["content"]
-        return ""
-    except Exception:
+        logger.error(f"OpenAI plan error: {str(e)}", exc_info=True)
         return ""
 
-# ===================== AI PLAN ADAPTATION (agent) =====================
-def _extract_json_block(text: str):
-    try:
-        m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
-        if m: return json.loads(m.group(1))
-        m = re.search(r"(\{.*\})", text, flags=re.DOTALL)
-        if m: return json.loads(m.group(1))
-        return None
-    except Exception:
-        return None
-
-def ai_edit_plan(api_key: str, instruction: str, plan_text: str, profile: dict) -> dict:
-    """
-    Adapte le plan complet sans besoin de dire 'par quoi'.
-    Retour: {"ok": bool, "new_plan": str, "summary": str}
-    """
-    if not api_key:
-        return {"ok": False, "new_plan": "", "summary": "Pas de clé API."}
-
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-    system_prompt = (
-        "Tu es un coach certifié. Tu reçois un 'plan d'entraînement' en Markdown "
-        "(7 jours avec titres '**Jour X — Titre**' ou '**Day X: Title**'). "
-        "Tu dois ADAPTER ce plan selon une instruction utilisateur (p.ex. plus de course, moins de HIIT, "
-        "contraintes de blessures, durée, intensité, matériel dispo). "
-        "Garde le format Markdown existant (jours, puces, RPE s'il y en a). "
-        "Règles de sécurité: pas de mouvements risqués pour un débutant; respecter les blessures et le matériel. "
-        "Réponds STRICTEMENT en JSON: "
-        "{'new_plan': '<markdown complet>', 'summary': '<changements concis>', 'changed_days': [<ints>]}"
-    )
-
-    user_prompt = (
-        "=== PROFIL JSON ===\n"
-        f"{json.dumps(profile, ensure_ascii=False)}\n\n"
-        "=== INSTRUCTION UTILISATEUR ===\n"
-        f"{instruction}\n\n"
-        "=== PLAN ACTUEL ===\n"
-        f"{plan_text}\n\n"
-        "=== FORMAT SORTIE ===\n"
-        "{'new_plan': '...', 'summary': '...', 'changed_days': [1,2,3]}"
-    )
-
-    body = {
-        "model": "gpt-4o-mini",
-        "messages": [{"role":"system","content":system_prompt},{"role":"user","content":user_prompt}],
-        "max_tokens": 1400,
-        "temperature": 0.5
-    }
-
-    try:
-        r = requests.post(url, headers=headers, json=body, timeout=60)
-        if r.status_code != 200:
-            return {"ok": False, "new_plan": "", "summary": f"Erreur API: {r.status_code}"}
-        content = r.json()["choices"][0]["message"]["content"]
-        obj = _extract_json_block(content) or {}
-        new_plan = obj.get("new_plan", "").strip()
-        summary  = obj.get("summary", "").strip()
-        if new_plan and ("Jour 1" in new_plan or "Day 1" in new_plan):
-            return {"ok": True, "new_plan": new_plan, "summary": summary or "Plan adapté."}
-        return {"ok": False, "new_plan": "", "summary": "Réponse modèle non exploitable."}
-    except Exception as e:
-        return {"ok": False, "new_plan": "", "summary": f"Erreur: {e}"}
-
-# ===================== FALLBACKS =====================
-def fallback_plan(p: dict) -> str:
-    obj = p.get("objectif_principal", "Condition générale") or "Condition générale"
-    dur = int(p.get("duree_min", 30) or 30)
-    jours = int(p.get("jours_sem", 3) or 3)
-    niveau = p.get("niveau_exp", "Débutant") or "Débutant"
-    return (
-        f"**Plan d'entraînement 7 jours — Serge Coach**\n\n"
-        f"**Objectif:** {obj}\n"
-        f"**Niveau:** {niveau}\n"
-        f"**Durée par séance:** ~{dur} min\n"
-        f"**Fréquence recommandée:** {jours} jours/semaine\n\n"
-        "---\n\n"
-        "**Jour 1 — Full Body (RPE 6)**\n"
-        "- Échauffement: 5 min mobilité\n"
-        "- Squats: 3 x 12\n"
-        "- Pompes: 3 x 10\n"
-        "- Rowing haltères: 3 x 12\n"
-        "- Planche: 3 x 30s\n\n"
-        "**Jour 2 — Cardio léger (RPE 5)**\n"
-        f"- Marche rapide / vélo: {dur} min\n\n"
-        "**Jour 3 — Haut du corps (RPE 6)**\n"
-        "- Développé haltères: 3 x 12\n"
-        "- Tirage horizontal: 3 x 12\n"
-        "- Élévations latérales: 3 x 15\n"
-        "- Curl biceps: 3 x 12\n"
-        "- Extension triceps: 3 x 12\n\n"
-        "**Jour 4 — Mobilité & Core (RPE 3-4)**\n"
-        "- Yoga/étirements: 15-20 min\n"
-        "- Dead bug: 3 x 12\n"
-        "- Side plank: 3 x 20s/side\n\n"
-        "**Jour 5 — Bas du corps (RPE 6)**\n"
-        "- Fentes alternées: 3 x 12/ jambe\n"
-        "- Pont fessier: 3 x 15\n"
-        "- Squat sumo: 3 x 12\n"
-        "- Mollets debout: 3 x 15\n\n"
-        "**Jour 6 — Intervalles (RPE 7)**\n"
-        f"- 6 x (2 min effort / 1 min récup) — total ~{dur} min\n\n"
-        "**Jour 7 — Repos actif**\n"
-        "- Marche 20-30 min + mobilité\n\n"
-        "---\n\n"
-        "**Conseils:** Hydratation 2-3L, 7-9h de sommeil, protéines à chaque repas."
-    )
-
-def fallback_nutrition(profile: dict) -> str:
+def compute_calorie_targets(profile: dict):
+    """Calcule l'apport calorique et macros cibles en fonction du profil."""
     objectif = profile.get("objectif_principal", "Condition générale") or "Condition générale"
     sexe = profile.get("sexe", "Homme") or "Homme"
     poids = float(profile.get("poids_kg", 70) or 70)
     taille = float(profile.get("taille_cm", 175) or 175)
     age = int(profile.get("age", 30) or 30)
     activite = profile.get("activite", "Modérément actif") or "Modérément actif"
+
     if sexe == "Homme":
         bmr = 10 * poids + 6.25 * taille - 5 * age + 5
     else:
         bmr = 10 * poids + 6.25 * taille - 5 * age - 161
+
     facteur_act = {
         "Peu actif (Travail de bureau)": 1.2,
         "Modérément actif (Marche régulière)": 1.4,
         "Actif (Travail physique)": 1.6,
         "Très actif (Sports fréquents)": 1.8
     }.get(activite, 1.4)
+
     calories = int(bmr * facteur_act)
-    if "perte" in (objectif or "").lower():
+
+    obj_lower = (objectif or "").lower()
+    if "perte" in obj_lower:
         calories -= 400
-    elif "masse" in (objectif or "").lower():
+    elif "masse" in obj_lower or "gain" in obj_lower:
         calories += 400
+
     proteines = round(poids * 1.8)
     glucides = round((calories * 0.5) / 4)
     lipides = round((calories * 0.25) / 9)
-    return f"""
-**Plan nutritionnel - Objectif : {objectif}**
 
-🔹 Apport cible : **{calories} kcal / jour**
-🔹 Répartition :
-- Protéines : {proteines} g
-- Glucides : {glucides} g
-- Lipides : {lipides} g
+    return calories, proteines, glucides, lipides, objectif
 
-🍽️ Exemple de journée :
-- **Petit-déjeuner :** Avoine, fruits rouges, yogourt grec
-- **Dîner :** Poulet, riz brun, légumes vapeur
-- **Souper :** Saumon, quinoa, brocoli
-- **Collations :** Amandes, pomme, shake protéiné
-
-💧 *Hydrate-toi 2-3 L/jour et limite les sucres ajoutés.*"""
-
-# ===================== METEO (Open-Meteo) =====================
-def geocode_city(city: str):
+def call_openai_nutrition(api_key: str, profile: dict) -> str:
+    """Génère un plan nutritionnel via OpenAI sur 7 jours avec cibles caloriques."""
     try:
-        r = requests.get("https://geocoding-api.open-meteo.com/v1/search",
-                         params={"name": city, "count": 1, "language": "fr"}, timeout=10)
-        res = r.json().get("results", [])
-        if not res: return None
-        x = res[0]
-        return float(x["latitude"]), float(x["longitude"]), f'{x["name"]}, {x.get("country","")}'
-    except:
-        return None
+        if not api_key or not api_key.startswith("sk-"):
+            return ""
 
-def get_today_weather(lat: float, lon: float):
+        calories, proteines, glucides, lipides, objectif = compute_calorie_targets(profile)
+
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        system_prompt = (
+            "Tu es un nutritionniste certifié.\n"
+            f"L'objectif principal déclaré est : {objectif}.\n"
+            f"Les cibles quotidiennes approximatives sont : {calories} kcal, "
+            f"{proteines} g de protéines, {glucides} g de glucides, {lipides} g de lipides.\n\n"
+            "Crée un **plan nutritionnel sur exactement 7 jours (Jour 1 à Jour 7)** "
+            "au format Markdown.\n"
+            "Pour CHAQUE jour, inclus :\n"
+            "- Petit-déjeuner\n- Dîner\n- Souper\n- 1 à 2 collations\n"
+            "- Un total calorique estimé pour la journée (proche des cibles, ±10%).\n"
+            "Utilise des intitulés clairs du type : `### Jour 1`, `### Jour 2`, ..., `### Jour 7`.\n"
+            "Assure-toi de ne PAS oublier le Jour 7."
+        )
+
+        body = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Profil: {json.dumps(profile, ensure_ascii=False)}"}
+            ],
+            "max_tokens": 1500,
+            "temperature": 0.7
+        }
+
+        logger.info("Calling OpenAI API for nutrition plan")
+        response = requests.post(url, headers=headers, json=body, timeout=60)
+
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        return ""
+
+    except Exception as e:
+        logger.error(f"OpenAI nutrition error: {str(e)}")
+        return ""
+
+def call_openai_chat(api_key: str, user_input: str, profile: dict, current_plan: str = "", nutrition_plan: str = "") -> str:
+    """Obtient une réponse de chat du coach IA"""
     try:
-        r = requests.get("https://api.open-meteo.com/v1/forecast",
-                         params={"latitude": lat, "longitude": lon,
-                                 "hourly":"temperature_2m,precipitation_probability",
-                                 "forecast_days":1,"timezone":"auto"}, timeout=10)
-        return r.json()
-    except:
-        return None
+        if not api_key or not api_key.startswith("sk-"):
+            return "Configure une clé API OpenAI pour utiliser le chat IA."
+        
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        system_prompt = (
+            f"Tu es Serge, un coach sportif professionnel expert et motivant. "
+            f"Tu discutes avec ton client et tu connais son profil, son plan d'entraînement et son plan nutritionnel. "
+            f"Réponds de manière personnalisée, concise et pratique. "
+            f"\n\n**PROFIL CLIENT:**\n{json.dumps(profile, ensure_ascii=False, indent=2)}"
+        )
+        
+        if current_plan:
+            system_prompt += f"\n\n**PLAN D'ENTRAÎNEMENT ACTUEL:**\n{current_plan[:1500]}"
+        
+        if nutrition_plan:
+            system_prompt += f"\n\n**PLAN NUTRITIONNEL:**\n{nutrition_plan[:1000]}"
+        
+        body = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ],
+            "max_tokens": 600,
+            "temperature": 0.7
+        }
+        
+        logger.info("Calling OpenAI API for chat")
+        response = requests.post(url, headers=headers, json=body, timeout=30)
+        
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        return "Désolé, je ne peux pas répondre pour le moment."
+        
+    except Exception as e:
+        logger.error(f"OpenAI chat error: {str(e)}")
+        return f"Erreur: {str(e)}"
 
-def weather_advice(weather_json, planned_minutes: int):
+def call_openai_exercise_suggestion(api_key: str, request: str, profile: dict, current_plan: str) -> str:
+    """Propose des exercices de remplacement sans modifier le plan (demande confirmation)."""
+    if not api_key or not api_key.startswith("sk-"):
+        return "Configure une clé API OpenAI pour que je puisse analyser et proposer un remplacement précis."
+
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    system_prompt = (
+        "Tu es un coach sportif professionnel.\n"
+        "L'utilisateur veut modifier un ou plusieurs exercices dans son plan d'entraînement.\n"
+        "Lis sa demande et PROPOSE 1 à 3 exercices de remplacement **concrets** "
+        "(nom, séries, répétitions, éventuellement charge ou RPE) qui soient équivalents.\n"
+        "Ne réécris PAS tout le plan, concentre-toi seulement sur les substitutions proposées.\n"
+        "À la fin, termine TOUJOURS par une question très claire du type :\n"
+        "\"Veux-tu que je mette à jour le plan avec ces changements ? Réponds par oui ou non.\""
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": (
+                f"Profil utilisateur:\n{json.dumps(profile, ensure_ascii=False, indent=2)}\n\n"
+                f"Plan actuel (extrait):\n{(current_plan or '')[:2000]}\n\n"
+                f"Demande de l'utilisateur :\n{request}"
+            )
+        }
+    ]
+
+    body = {
+        "model": "gpt-4o-mini",
+        "messages": messages,
+        "max_tokens": 700,
+        "temperature": 0.6
+    }
+
     try:
-        temps = weather_json["hourly"]["temperature_2m"][0]
-        prec = weather_json["hourly"]["precipitation_probability"][0]
-        if prec>50 or temps<0 or temps>28:
-            return (f"Météo peu favorable ({temps}°C, pluie {prec}%). "
-                    f"Alternative indoor ~{planned_minutes} min : circuit cardio / full body / yoga.")
-        return f"Météo OK ({temps}°C, pluie {prec}%). Entraînement extérieur possible."
-    except:
-        return "Météo indisponible."
+        logger.info("Calling OpenAI for exercise suggestion (no plan update yet)")
+        response = requests.post(url, headers=headers, json=body, timeout=60)
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        else:
+            logger.error(f"OpenAI exercise suggestion error: {response.status_code}")
+            return "Je n'ai pas pu générer une suggestion d'exercice pour le moment."
+    except Exception as e:
+        logger.error(f"Exercise suggestion error: {e}")
+        return f"Erreur lors de la suggestion d'exercice : {e}"
 
-# ===================== CALENDRIER =====================
-from datetime import datetime, timedelta
+def fallback_nutrition(profile: dict) -> str:
+    """Génère un plan nutritionnel simple sur 7 jours avec les bons apports."""
+    calories, proteines, glucides, lipides, objectif = compute_calorie_targets(profile)
+
+    base_intro = f"""**Plan nutritionnel — Objectif : {objectif}**
+
+🔹 Apport cible : **{calories} kcal / jour**  
+🔹 Répartition macros (approx.) :  
+- Protéines : {proteines} g  
+- Glucides : {glucides} g  
+- Lipides : {lipides} g  
+
+Ce plan propose 7 jours avec des menus variés mais équilibrés, autour de ces cibles.
+"""
+
+    jours = []
+    for i in range(1, 8):
+        jours.append(f"""
+---
+
+### Jour {i}
+
+**Petit-déjeuner** (~{int(0.25 * calories)} kcal)  
+- Avoine (60g) avec fruits rouges  
+- Yogourt grec (150g)  
+- 1 fruit (pomme ou banane)  
+
+**Dîner** (~{int(0.3 * calories)} kcal)  
+- Source de protéine (poulet, tofu ou poisson, 120-150g)  
+- Féculent complet (riz brun, quinoa, pâtes de blé entier ~80-100g crus)  
+- Légumes variés (brocoli, carottes, salade)  
+- 1 c. à soupe d'huile d'olive  
+
+**Souper** (~{int(0.3 * calories)} kcal)  
+- Source de protéine (saumon, légumineuses, tempeh, etc. 120-150g)  
+- Légumes cuits ou crus  
+- Portion modérée de féculents (riz, pommes de terre, etc.)  
+
+**Collations** (~{int(0.15 * calories)} kcal au total)  
+- 1 poignée d'amandes ou noix (20-30g)  
+- 1 yogourt ou un petit shake protéiné  
+- 1 fruit
+
+**Total cible** : ~{calories} kcal (±10%)  
+""")
+
+    conseils = """
+---
+
+💧 **Hydratation :** 2-3 L d'eau par jour  
+🚫 **À limiter :** sucres ajoutés, aliments ultra-transformés, alcool en excès  
+✅ **À privilégier :** aliments entiers, protéines maigres, légumes, fruits frais, fibres  
+"""
+
+    return base_intro + "\n".join(jours) + conseils
+
+# ===================== CALENDRIER FUNCTIONS =====================
 try:
     from streamlit_calendar import calendar as st_calendar
     CALENDAR_AVAILABLE = True
-except Exception:
+except ImportError:
     CALENDAR_AVAILABLE = False
+    logger.warning("streamlit-calendar not installed")
 
-# --- Parser robuste des jours ---
 def parse_workout_plan(plan_text: str) -> list:
-    """
-    Extrait les sessions du plan en détectant des titres de jour au format:
-    **Jour X — Titre**, **Jour X: Titre**, **Day X - Title**, etc.
-    Tolère espaces et variantes de tirets.
-    """
+    """Parse le plan pour extraire les sessions par jour"""
     sessions = []
+    
+    if not plan_text or not isinstance(plan_text, str) or not plan_text.strip():
+        logger.warning("Plan text is empty or invalid")
+        return sessions
+    
     lines = plan_text.splitlines()
-    day_header_re = re.compile(r"^\s*\*\*\s*(Jour|Day)\s+(\d+)\s*(?:[—\-:]\s*(.*?))?\s*\*\*\s*$", re.IGNORECASE)
-
+    logger.info(f"Parsing plan with {len(lines)} lines")
+    
+    patterns = [
+        re.compile(r'^\s*\*\*\s*(?:Jour|Day|JOUR|DAY)\s+(\d+)\s*(?:[:\-–—]\s*(.*))?\s*\*\*\s*$', re.IGNORECASE),
+        re.compile(r'^\s*(?:Jour|Day|JOUR|DAY)\s+(\d+)\s*(?:[:\-–—]\s*(.*))?\s*$', re.IGNORECASE),
+        re.compile(r'^\s*#{1,6}\s*(?:Jour|Day|JOUR|DAY)\s+(\d+)\s*(?:[:\-–—]\s*(.*))?\s*$', re.IGNORECASE),
+    ]
+    
     current_day = None
     current_title = None
     current_description = []
-
-    for raw in lines:
-        line = raw.rstrip()
-        m = day_header_re.match(line)
-        if m:
-            if current_day is not None:
-                sessions.append({
-                    "day": current_day,
-                    "title": current_title or "Entraînement",
-                    "description": "\n".join(current_description[:10]).strip()
-                })
-            current_day = int(m.group(2))
-            current_title = (m.group(3) or "Entraînement").strip()
-            current_description = []
-        else:
-            if current_day is not None and line.strip():
-                current_description.append(line.strip())
-
+    
+    for line_num, line in enumerate(lines, 1):
+        line_stripped = line.strip()
+        
+        if not line_stripped:
+            continue
+        
+        matched = False
+        for pattern in patterns:
+            match = pattern.match(line_stripped)
+            if match:
+                matched = True
+                
+                if current_day is not None:
+                    desc = "\n".join(current_description).strip()
+                    sessions.append({
+                        "day": current_day,
+                        "title": current_title or "Entraînement",
+                        "description": desc[:500] if desc else "Séance d'entraînement"
+                    })
+                    logger.debug(f"Saved session Day {current_day}: {current_title}")
+                
+                current_day = int(match.group(1))
+                current_title = (match.group(2) or "Entraînement").strip() if match.lastindex and match.group(2) else "Entraînement"
+                current_description = []
+                logger.info(f"Line {line_num}: Found Day {current_day} - {current_title}")
+                break
+        
+        if matched:
+            continue
+        
+        if current_day is not None:
+            if not re.match(r'^[\*\-=_#]{3,}$', line_stripped):
+                if len(current_description) < 20:
+                    current_description.append(line_stripped)
+    
     if current_day is not None:
+        desc = "\n".join(current_description).strip()
         sessions.append({
             "day": current_day,
             "title": current_title or "Entraînement",
-            "description": "\n".join(current_description[:10]).strip()
+            "description": desc[:500] if desc else "Séance d'entraînement"
         })
-
+        logger.debug(f"Saved final session Day {current_day}: {current_title}")
+    
+    logger.info(f"✅ Parsed {len(sessions)} total sessions from plan")
+    
+    for session in sessions:
+        logger.info(f" → Jour {session['day']}: {session['title']}")
+    
+    if len(sessions) == 0:
+        logger.warning("No sessions found with standard patterns, trying basic parsing")
+        for line in lines:
+            if re.search(r'(?:jour|day)\s*(\d+)', line, re.IGNORECASE):
+                match = re.search(r'(?:jour|day)\s*(\d+)', line, re.IGNORECASE)
+                day_num = int(match.group(1))
+                sessions.append({
+                    "day": day_num,
+                    "title": f"Jour {day_num}",
+                    "description": line.strip()
+                })
+                logger.info(f" → Basic parse: Jour {day_num}")
+    
     return sessions
 
 def create_calendar_events(sessions: list, start_date=None) -> list:
+    """Crée des événements calendrier à partir des sessions"""
+    from datetime import datetime, timedelta
+    
+    if not sessions:
+        return []
+    
     if start_date is None:
         start_date = datetime.now()
+    
     if hasattr(start_date, 'hour'):
         start_date = datetime.combine(start_date.date(), datetime.min.time())
     else:
         start_date = datetime.combine(start_date, datetime.min.time())
-
-    moment_pref = st.session_state.answers.get("moment", "Matin")
-    time_map = {"Matin":"07:00","Midi":"12:00","Après-midi":"15:00","Soir / Nuit":"18:00"}
-    start_time = time_map.get(moment_pref, "07:00")
+    
+    moment_pref = st.session_state.answers.get("moment", "Matin (6h-10h)")
     duree = int(st.session_state.answers.get("duree_min", 60) or 60)
-    end_hour = int(start_time.split(':')[0])
-    end_minute = int(start_time.split(':')[1]) + duree
-    if end_minute >= 60:
-        end_hour += end_minute // 60
-        end_minute = end_minute % 60
+    
+    time_map = {
+        "Matin (6h-10h)": "07:00",
+        "Midi (11h-14h)": "12:00",
+        "Après-midi (15h-18h)": "15:00",
+        "Soir / Nuit (19h+)": "18:00"
+    }
+    
+    start_time = time_map.get(moment_pref, "07:00")
+    hour, minute = map(int, start_time.split(':'))
+    end_minute = minute + duree
+    end_hour = hour + (end_minute // 60)
+    end_minute = end_minute % 60
     end_time = f"{end_hour:02d}:{end_minute:02d}"
-
+    
     events = []
     for session in sessions:
         event_date = start_date + timedelta(days=session['day'] - 1)
         date_str = event_date.strftime("%Y-%m-%d")
+        
         title_lower = (session['title'] or "").lower()
-        is_rest = any(w in title_lower for w in ["repos","rest","récupération","recovery"])
-        color = "#666666" if is_rest else "#3ea6ff"
+        is_rest = any(word in title_lower for word in ["repos", "rest", "récupération", "recovery"])
+        color = "#888888" if is_rest else "#3ea6ff"
+        
         events.append({
             "title": f"Jour {session['day']}: {session['title']}",
             "start": f"{date_str}T{start_time}:00",
             "end": f"{date_str}T{end_time}:00",
-            "extendedProps": {"description": session['description'], "day_number": session['day']},
-            "backgroundColor": color, "borderColor": color, "textColor": "#ffffff"
+            "extendedProps": {
+                "description": session['description'],
+                "day_number": session['day']
+            },
+            "backgroundColor": color,
+            "borderColor": color,
+            "textColor": "#ffffff"
         })
+    
+    logger.info(f"Created {len(events)} calendar events")
     return events
 
 def recompute_calendar_events():
-    """Recalcule et stocke les événements du calendrier selon le plan et la date choisie."""
-    if "calendar_start_date" not in st.session_state or not st.session_state.calendar_start_date:
-        st.session_state.calendar_start_date = dt.date.today()
-
+    """Recalcule les événements du calendrier"""
+    start_date = st.session_state.get("calendar_start_date")
+    if not start_date:
+        start_date = dt.date.today()
+        st.session_state.calendar_start_date = start_date
+    
     plan_text = st.session_state.get("plan_text", "") or ""
-    sessions = parse_workout_plan(plan_text)
-    if not sessions:
-        st.session_state["calendar_events"] = []
+    if not plan_text:
+        st.session_state.calendar_events = []
         return
-
-    start_date = st.session_state.calendar_start_date
+    
+    sessions = parse_workout_plan(plan_text)
     events = create_calendar_events(sessions, start_date)
-    st.session_state["calendar_events"] = events
+    st.session_state.calendar_events = events
+    logger.info(f"Calendar recomputed: {len(events)} events")
 
-# ===================== AGENT / ORCHESTRATION (chat ↔ plan ↔ calendrier) =====================
-def _get_day_bounds(plan_text: str, day_number: int):
-    pattern_day = re.compile(rf"^\*\*(Jour|Day)\s+{day_number}\b.*$", re.MULTILINE)
-    match = pattern_day.search(plan_text)
-    if not match:
-        return None, None
-    start_idx = match.start()
-    pattern_next = re.compile(r"^\*\*(Jour|Day)\s+\d+\b.*$", re.MULTILINE)
-    next_match = pattern_next.search(plan_text, match.end())
-    end_idx = next_match.start() if next_match else len(plan_text)
-    return start_idx, end_idx
+# ===================== MÉTÉO FUNCTIONS =====================
+def geocode_city(city: str):
+    """Récupère les coordonnées d'une ville"""
+    try:
+        response = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={"name": city, "count": 1, "language": "fr"},
+            timeout=10
+        )
+        results = response.json().get("results", [])
+        if not results:
+            return None
+        loc = results[0]
+        return (
+            float(loc["latitude"]),
+            float(loc["longitude"]),
+            f'{loc["name"]}, {loc.get("country","")}'
+        )
+    except Exception as e:
+        logger.error(f"Geocoding error: {str(e)}")
+        return None
 
-def replace_in_day(plan_text: str, day_number: int, old_term: str, new_term: str):
-    start, end = _get_day_bounds(plan_text, day_number)
-    if start is None:
-        return plan_text, False
-    before = plan_text[:start]; section = plan_text[start:end]; after = plan_text[end:]
-    replaced_section, n = re.subn(re.escape(old_term), new_term, section, flags=re.IGNORECASE)
-    if n == 0:
-        synonyms = {
-            "treadmill": ["tapis roulant","tapis","treadmill"],
-            "course en plein air": ["course outdoor","course plein air","jogging dehors","course en plein air"]
-        }
-        candidates = [old_term]
-        for k, arr in synonyms.items():
-            if old_term.lower() in [x.lower() for x in arr+[k]]:
-                candidates = arr+[k]; break
-        found = False; tmp = section
-        for cand in candidates:
-            tmp, n2 = re.subn(re.escape(cand), new_term, tmp, flags=re.IGNORECASE)
-            if n2>0: found=True
-        if found:
-            replaced_section = tmp
-        else:
-            return plan_text, False
-    return before + replaced_section + after, True
+def get_today_weather(lat: float, lon: float):
+    """Récupère la météo du jour"""
+    try:
+        response = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "hourly": "temperature_2m,precipitation_probability",
+                "forecast_days": 1,
+                "timezone": "auto"
+            },
+            timeout=10
+        )
+        return response.json()
+    except Exception as e:
+        logger.error(f"Weather API error: {str(e)}")
+        return None
 
-def add_exercise_to_day(plan_text: str, day_number: int, line_text: str):
-    start, end = _get_day_bounds(plan_text, day_number)
-    if start is None: return plan_text, False
-    before = plan_text[:start]; section = plan_text[start:end].rstrip(); after = plan_text[end:]
-    if not line_text.strip().startswith("-"):
-        line_text = "- " + line_text.strip()
-    if not section.endswith("\n"):
-        section += "\n"
-    section += line_text + "\n"
-    return before + section + after, True
+def weather_advice(weather_json, planned_minutes: int) -> str:
+    """Génère des conseils selon la météo"""
+    try:
+        temps = weather_json["hourly"]["temperature_2m"][0]
+        prec = weather_json["hourly"]["precipitation_probability"][0]
+        
+        if prec > 50 or temps < 0 or temps > 28:
+            return (
+                f"⚠️ Météo peu favorable ({temps}°C, pluie {prec}%). "
+                f"Alternative indoor ~{planned_minutes} min : circuit cardio / full body / yoga."
+            )
+        return f"✅ Météo OK ({temps}°C, pluie {prec}%). Entraînement extérieur possible!"
+    except Exception as e:
+        logger.error(f"Weather advice error: {str(e)}")
+        return "Météo indisponible."
 
-def remove_line_in_day(plan_text: str, day_number: int, contains_text: str):
-    start, end = _get_day_bounds(plan_text, day_number)
-    if start is None: return plan_text, False
-    before = plan_text[:start]; section = plan_text[start:end]; after = plan_text[end:]
-    new_lines = []; removed=False
-    for ln in section.splitlines():
-        if re.search(re.escape(contains_text), ln, flags=re.IGNORECASE):
-            removed=True; continue
-        new_lines.append(ln)
-    if not removed: return plan_text, False
-    new_section = "\n".join(new_lines) + ("\n" if section.endswith("\n") else "")
-    return before + new_section + after, True
+def get_weather(city: str = "Montreal") -> dict:
+    """Récupère la météo actuelle pour une ville via Open-Meteo (plus fiable)."""
+    geo = geocode_city(city)
+    if geo:
+        lat, lon, full_name = geo
+        try:
+            response = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current_weather": True,
+                    "timezone": "auto"
+                },
+                timeout=10
+            )
+            data = response.json()
+            cw = data.get("current_weather", {}) or {}
+            temp = cw.get("temperature")
+            weather_code = cw.get("weathercode")
 
-def _set_moment_pref(moment_label: str):
-    mapping = {
-        "matin":"Matin","morning":"Matin","midi":"Midi","noon":"Midi",
-        "après-midi":"Après-midi","apres-midi":"Après-midi","afternoon":"Après-midi",
-        "soir":"Soir / Nuit","nuit":"Soir / Nuit","evening":"Soir / Nuit","night":"Soir / Nuit"
+            code_map = {
+                0: "Ciel dégagé",
+                1: "Principalement dégagé",
+                2: "Partiellement nuageux",
+                3: "Couvert",
+                45: "Brouillard",
+                48: "Brouillard givrant",
+                51: "Bruine faible",
+                53: "Bruine modérée",
+                55: "Bruine forte",
+                61: "Pluie faible",
+                63: "Pluie modérée",
+                65: "Pluie forte",
+                71: "Neige faible",
+                73: "Neige modérée",
+                75: "Neige forte",
+                80: "Averses faibles",
+                81: "Averses modérées",
+                82: "Averses fortes"
+            }
+            condition = code_map.get(weather_code, "Conditions variables")
+
+            if isinstance(temp, (int, float)):
+                return {
+                    "temp": f"{round(temp)}",
+                    "condition": condition,
+                    "humidity": "--",
+                    "feels_like": f"{round(temp)}"
+                }
+        except Exception as e:
+            logger.warning(f"Open-Meteo error in get_weather: {e}")
+
+    logger.warning("Fallback météo utilisé (valeurs par défaut).")
+    return {
+        "temp": "20",
+        "condition": "Ensoleillé",
+        "humidity": "65",
+        "feels_like": "18"
     }
-    key = moment_label.strip().lower()
-    st.session_state.answers["moment"] = mapping.get(key, st.session_state.answers.get("moment", "Matin"))
 
-def _set_reminder_days_from_text(text: str):
-    days = sorted({int(d) for d in re.findall(r"J\s*([1-7])", text, flags=re.IGNORECASE)})
-    if days: st.session_state.reminder_days = days
-
-def _parse_date_from_text(text: str):
-    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", text)
-    if m: y, M, d = map(int, m.groups()); return dt.date(y, M, d)
-    m = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", text)
-    if m:
-        d, M, y = map(int, m.groups())
-        try: return dt.date(y, M, d)
-        except: return None
-    return None
-
-def _regenerate_plan_if_needed():
-    a = st.session_state.answers
-    profile = {
-        "age": a.get("age"), "sexe": a.get("sexe"), "taille_cm": a.get("taille_cm"),
-        "poids_kg": a.get("poids_kg"), "niveau_exp": a.get("niveau_exp"),
-        "blessures": a.get("blessures"), "sante": a.get("sante"), "activite": a.get("activite"),
-        "objectif_principal": a.get("objectif_principal"), "objectif_secondaire": a.get("objectif_secondaire"),
-        "horizon": a.get("horizon"), "motivation": a.get("motivation"), "types_exos": a.get("types_exos"),
-        "jours_sem": a.get("jours_sem"), "duree_min": a.get("duree_min"), "moment": a.get("moment"),
-        "lieu": a.get("lieu"), "materiel": a.get("materiel"), "sommeil_h": a.get("sommeil_h"),
-        "ville": a.get("ville"), "nutrition": a.get("nutrition")
-    }
-    plan_text = call_openai_plan(st.session_state.api_key, profile) if st.session_state.api_key else ""
-    st.session_state.plan_text = plan_text or fallback_plan(profile)
-    st.session_state._last_plan_hash = hash(st.session_state.plan_text)
-    recompute_calendar_events()
-
-ORDINALS_FR = {
-    "premiere": 1, "première": 1, "premier": 1, "1ere": 1, "1ère": 1, "1er": 1,
-    "deuxieme": 2, "deuxième": 2, "2eme": 2, "2ème": 2,
-    "troisieme": 3, "troisième": 3, "3eme": 3, "3ème": 3,
-    "quatrieme": 4, "quatrième": 4, "4eme": 4, "4ème": 4,
-    "cinquieme": 5, "cinquième": 5, "5eme": 5, "5ème": 5,
-    "sixieme": 6, "sixième": 6, "6eme": 6, "6ème": 6,
-    "septieme": 7, "septième": 7, "7eme": 7, "7ème": 7,
-}
-def _extract_day_number(text: str):
-    m = re.search(r"\b(?:jour|day)\s*(\d)\b", text, flags=re.IGNORECASE)
-    if m: return int(m.group(1))
-    m = re.search(r"\b(premi(?:er|ère|ere)|deuxi(?:eme|ème)|troisi(?:eme|ème)|quatri(?:eme|ème)|cinqui(?:eme|ème)|sixi(?:eme|ème)|septi(?:eme|ème))\b.*\b(?:jour|journée)\b", text, flags=re.IGNORECASE)
-    if m:
-        key = m.group(1).lower().replace("é","e")
-        return ORDINALS_FR.get(key)
-    return None
-
-def handle_chat_command(user_text: str):
-    """
-    Retourne: {"feedback": str, "plan_changed": bool, "calendar_changed": bool}
-    """
-    text = user_text.strip()
-    low  = text.lower()
-
-    # (A) Régénérer
-    if re.search(r"\b(régénère|regenere|regenerate)\b.*\bplan\b", low):
-        _regenerate_plan_if_needed()
-        return {"feedback":"🔄 J'ai régénéré ton plan.", "plan_changed":True, "calendar_changed":False}
-
-    # (B) Ajout d'exo
-    m = re.search(r"(?:ajout|ajoute|add)\w*.*?(?:jour|day)\s*(\d)\D+(.+)$", low, flags=re.IGNORECASE)
-    if not m:
-        dnum = _extract_day_number(low)
-        if dnum:
-            m2 = re.search(r"(?:ajout|ajoute|add)\w*\D+(.+)$", low, flags=re.IGNORECASE)
-            if m2:
-                to_add = m2.group(1).strip()
-                st.session_state.plan_text, ok = add_exercise_to_day(st.session_state.plan_text or "", dnum, to_add)
-                if ok:
-                    st.session_state._last_plan_hash = hash(st.session_state.plan_text)
-                    recompute_calendar_events()
-                    return {"feedback": f"➕ Jour {dnum}: j'ai ajouté « {to_add} ».","plan_changed":True,"calendar_changed":True}
-    else:
-        dnum = int(m.group(1)); to_add = m.group(2).strip()
-        st.session_state.plan_text, ok = add_exercise_to_day(st.session_state.plan_text or "", dnum, to_add)
-        if ok:
-            st.session_state._last_plan_hash = hash(st.session_state.plan_text)
-            recompute_calendar_events()
-            return {"feedback": f"➕ Jour {dnum}: j'ai ajouté « {to_add} ».","plan_changed":True,"calendar_changed":True}
-
-    # (C) Remplacement explicite
-    m = re.search(r"(?:remplac|chang|modif)\w*\s+(.+?)\s+(?:par|for)\s+(.+)$", low, flags=re.IGNORECASE)
-    if m:
-        old_term = m.group(1).strip(); new_term = m.group(2).strip()
-        dnum = _extract_day_number(low) or 1
-        st.session_state.plan_text, ok = replace_in_day(st.session_state.plan_text or "", dnum, old_term, new_term)
-        if ok:
-            st.session_state._last_plan_hash = hash(st.session_state.plan_text)
-            recompute_calendar_events()
-            return {"feedback": f"✏️ Jour {dnum}: « {old_term} » → « {new_term} ».","plan_changed":True,"calendar_changed":True}
-        else:
-            return {"feedback": f"⚠️ Je n'ai pas trouvé « {old_term} » au Jour {dnum}.","plan_changed":False,"calendar_changed":False}
-
-    # (D) Suppression / remplacement implicite
-    if re.search(r"\b(remplac|supprim|retir|enlev)\w*\b", low) and re.search(r"(jour|day|premi|deuxi|troisi|quatri|cinqui|sixi|septi)", low):
-        dnum = _extract_day_number(low) or 1
-        m = re.search(r"\b(remplac|supprim|retir|enlev)\w*\b\s+(les|des|du|de la|le|la|l'|d')?\s*([a-z0-9 \-\(\)\/]+)", low)
+# ===================== PLAN ADAPTATION (AI AGENT) =====================
+def _extract_json_block(text: str):
+    """Extrait un bloc JSON d'une réponse texte (avec ou sans ```json)."""
+    try:
+        m = re.search(r"```json(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
         if m:
-            target = m.group(3).strip()
-            st.session_state.plan_text, ok = remove_line_in_day(st.session_state.plan_text or "", dnum, target)
-            if ok:
+            return json.loads(m.group(1).strip())
+
+        m = re.search(r"(\{.*\})", text, flags=re.DOTALL)
+        if m:
+            return json.loads(m.group(1).strip())
+
+        return None
+    except Exception:
+        return None
+
+def ai_edit_plan(api_key: str, instruction: str, plan_text: str, profile: dict) -> dict:
+    """Adapte le plan complet avec l'IA"""
+    if not api_key or not api_key.startswith("sk-"):
+        return {"ok": False, "new_plan": "", "summary": "Pas de clé API."}
+    
+    try:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        system_prompt = (
+            "Tu es un coach certifié. Tu reçois un plan d'entraînement en Markdown "
+            "et une instruction de modification. Adapte le plan selon l'instruction "
+            "en gardant le format (jours, exercices, RPE). Respecte les contraintes. "
+            "Réponds STRICTEMENT en JSON: {\"new_plan\": \"\", \"summary\": \"\", \"changed_days\": []}"
+        )
+        
+        user_prompt = (
+            f"=== PROFIL ===\n{json.dumps(profile, ensure_ascii=False)}\n\n"
+            f"=== INSTRUCTION ===\n{instruction}\n\n"
+            f"=== PLAN ACTUEL ===\n{plan_text}\n\n"
+            "=== FORMAT SORTIE ===\n"
+            "{\"new_plan\": \"...\", \"summary\": \"...\", \"changed_days\": [1,2,3]}"
+        )
+        
+        body = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "max_tokens": 1400,
+            "temperature": 0.5
+        }
+        
+        logger.info(f"Calling AI edit plan: {instruction[:50]}...")
+        response = requests.post(url, headers=headers, json=body, timeout=60)
+        
+        if response.status_code != 200:
+            return {"ok": False, "new_plan": "", "summary": f"Erreur API: {response.status_code}"}
+        
+        content = response.json()["choices"][0]["message"]["content"]
+        obj = _extract_json_block(content) or {}
+        
+        new_plan = obj.get("new_plan", "").strip()
+        summary = obj.get("summary", "").strip()
+        
+        if new_plan and ("Jour 1" in new_plan or "Day 1" in new_plan):
+            logger.info("Plan adapted successfully")
+            return {"ok": True, "new_plan": new_plan, "summary": summary or "Plan adapté."}
+        
+        return {"ok": False, "new_plan": "", "summary": "Réponse modèle non exploitable."}
+        
+    except Exception as e:
+        logger.error(f"AI edit plan error: {str(e)}", exc_info=True)
+        return {"ok": False, "new_plan": "", "summary": f"Erreur: {str(e)}"}
+
+# ===================== CHAT COMMAND HANDLER =====================
+def handle_chat_command(user_text: str):
+    """Traite les commandes textuelles du chat (plan, remplacement, etc.)."""
+    text = user_text.strip()
+    low = text.lower()
+
+    # 0) Si une modification est en attente, on check d'abord oui/non
+    pending = st.session_state.get("pending_plan_change")
+    if pending:
+        if any(w in low for w in ["oui", "yes", "ok", "vas-y", "vas y", "go", "applique", "apply"]):
+            profile = st.session_state.answers
+            result = ai_edit_plan(
+                st.session_state.api_key,
+                pending["instruction"],
+                st.session_state.plan_text,
+                profile
+            )
+            st.session_state.pending_plan_change = None
+
+            if result.get("ok"):
+                st.session_state.plan_text = result["new_plan"]
+                st.session_state.flash_plan_updated = True
                 st.session_state._last_plan_hash = hash(st.session_state.plan_text)
                 recompute_calendar_events()
-                return {"feedback": f"🗑️ Jour {dnum}: j'ai retiré « {target} ».","plan_changed":True,"calendar_changed":True}
+                feedback = (
+                    "✅ J'ai mis à jour ton plan avec les changements proposés.\n\n"
+                    f"**Résumé** — {result.get('summary', 'Plan adapté.')}"
+                )
+                return {
+                    "feedback": feedback,
+                    "plan_changed": True,
+                    "calendar_changed": True,
+                    "is_command": True
+                }
             else:
-                st.session_state.plan_text, ok2 = replace_in_day(st.session_state.plan_text or "", dnum, target, "High knees")
-                if ok2:
-                    st.session_state._last_plan_hash = hash(st.session_state.plan_text)
-                    recompute_calendar_events()
-                    return {"feedback": f"✏️ Jour {dnum}: j'ai remplacé « {target} » par « High knees ».","plan_changed":True,"calendar_changed":True}
-                return {"feedback": f"⚠️ Impossible de trouver « {target} » au Jour {dnum}.","plan_changed":False,"calendar_changed":False}
+                return {
+                    "feedback": f"⚠️ Je n'ai pas réussi à appliquer la modification. {result.get('summary', '')}",
+                    "plan_changed": False,
+                    "calendar_changed": False,
+                    "is_command": True
+                }
 
-    # (E) Préférence horaire
-    if re.search(r"(matin|morning|midi|noon|après-midi|apres-midi|afternoon|soir|nuit|evening|night)", low) and re.search(r"(séance|seance|workout|entrain|entrainement)", low):
-        m = re.search(r"(matin|morning|midi|noon|après-midi|apres-midi|afternoon|soir|nuit|evening|night)", low)
-        _set_moment_pref(m.group(1))
+        if any(w in low for w in ["non", "no", "annule", "cancel"]):
+            st.session_state.pending_plan_change = None
+            return {
+                "feedback": "👍 D'accord, je ne modifie pas le plan.",
+                "plan_changed": False,
+                "calendar_changed": False,
+                "is_command": True
+            }
+
+    # 1) Regénération complète du plan
+    if re.search(r"\b(régénère|regenere|regenerate)\b.*\bplan\b", low):
+        profile = {k: st.session_state.answers.get(k) for k in [
+            "age", "sexe", "taille_cm", "poids_kg", "niveau_exp", "blessures", "sante",
+            "activite", "objectif_principal", "objectif_secondaire", "horizon", "motivation",
+            "types_exos", "jours_sem", "duree_min", "moment", "lieu", "materiel",
+            "sommeil_h", "ville", "nutrition"
+        ]}
+        plan_text = call_openai_plan(st.session_state.api_key, profile) if st.session_state.api_key else ""
+        st.session_state.plan_text = plan_text or fallback_plan(profile)
+        st.session_state._last_plan_hash = hash(st.session_state.plan_text)
         recompute_calendar_events()
-        return {"feedback": f"⏰ Préférence horaire: **{st.session_state.answers.get('moment')}**.","plan_changed":False,"calendar_changed":True}
+        return {
+            "feedback": "🔄 J'ai régénéré ton plan.",
+            "plan_changed": True,
+            "calendar_changed": True,
+            "is_command": True
+        }
 
-    # (F) Notifications
-    if re.search(r"(active|enable)\w*.*(notification|rappel)", low):
-        st.session_state.notifications_enabled = True; _set_reminder_days_from_text(low)
-        return {"feedback": f"🔔 Notifications activées ({', '.join('J'+str(d) for d in st.session_state.reminder_days)})","plan_changed":False,"calendar_changed":False}
-    if re.search(r"(désactive|desactive|disable)\w*.*(notification|rappel)", low):
-        st.session_state.notifications_enabled = False
-        return {"feedback":"🔕 Notifications désactivées.","plan_changed":False,"calendar_changed":False}
+    # 2) Demande de remplacement d'exercice
+    replace_patterns = [
+        r"exercice de remplacement",
+        r"remplace", r"remplacer", r"remplacement",
+        r"exercice équivalent", r"exercices équivalents"
+    ]
+    is_replacement_request = any(re.search(p, low) for p in replace_patterns)
 
-    # (G) Date de début
-    if re.search(r"(date de début|start date|commence|début du programme)", low):
-        maybe_date = _parse_date_from_text(low)
-        if maybe_date:
-            st.session_state["calendar_start_date"] = maybe_date
-            recompute_calendar_events()
-            return {"feedback": f"🗓️ Début fixé au {maybe_date.isoformat()}.",
-                    "plan_changed": False, "calendar_changed": True}
-        return {"feedback":"⚠️ Donne une date (YYYY-MM-DD ou DD/MM/YYYY).",
-                "plan_changed":False,"calendar_changed":False}
+    if is_replacement_request:
+        if not st.session_state.api_key:
+            return {
+                "feedback": "💡 Pour que je puisse proposer et appliquer un exercice de remplacement automatiquement, ajoute une clé OpenAI dans la barre latérale.",
+                "plan_changed": False,
+                "calendar_changed": False,
+                "is_command": True
+            }
 
-    # (H) Ville
-    m = re.search(r"(?:ville|city)\s*[:=]\s*(.+)$", text, flags=re.IGNORECASE)
-    if m:
-        city = m.group(1).strip()
-        st.session_state.answers["ville"] = city
-        return {"feedback": f"📍 Ville mise à « {city} ».","plan_changed":False,"calendar_changed":True}
+        suggestion = call_openai_exercise_suggestion(
+            st.session_state.api_key,
+            text,
+            st.session_state.answers,
+            st.session_state.plan_text
+        )
 
-    # (I) Fallback IA — adaptation libre
-    if st.session_state.api_key:
+        st.session_state.pending_plan_change = {
+            "instruction": text
+        }
+
+        return {
+            "feedback": suggestion,
+            "plan_changed": False,
+            "calendar_changed": False,
+            "is_command": True
+        }
+
+    # 3) Modifications plus générales du plan
+    plan_modification_keywords = [
+        r"\b(modifie|modifier|change|changer|adapte|adapter|ajuste|ajuster)\b.*\bplan\b",
+        r"\bplan\b.*\b(modifie|modifier|change|changer|adapte|adapter|ajuste|ajuster)\b",
+        r"\b(ajoute|ajouter|enlève|enlever|retire|retirer|supprime|supprimer)\b.*\b(jour|exercice|séance)\b",
+        r"\b(plus|moins)\b.*\b(cardio|musculation|hiit|repos|exercice)\b",
+        r"\b(rédui[st]|augmente|diminue)\b.*\b(durée|jours|répétitions|séries)\b"
+    ]
+
+    is_plan_modification = any(re.search(pattern, low) for pattern in plan_modification_keywords)
+
+    if is_plan_modification and st.session_state.api_key:
         if not st.session_state.plan_text:
-            _regenerate_plan_if_needed()
-        result = ai_edit_plan(st.session_state.api_key, text, st.session_state.plan_text, st.session_state.answers)
+            profile = {k: st.session_state.answers.get(k) for k in [
+                "age", "sexe", "taille_cm", "poids_kg", "niveau_exp", "blessures", "sante",
+                "activite", "objectif_principal", "objectif_secondaire", "horizon", "motivation",
+                "types_exos", "jours_sem", "duree_min", "moment", "lieu", "materiel",
+                "sommeil_h", "ville", "nutrition"
+            ]}
+            plan_text = call_openai_plan(st.session_state.api_key, profile) or fallback_plan(profile)
+            st.session_state.plan_text = plan_text
+
+        result = ai_edit_plan(
+            st.session_state.api_key,
+            text,
+            st.session_state.plan_text,
+            st.session_state.answers
+        )
+
         if result.get("ok"):
             st.session_state.plan_text = result["new_plan"]
             st.session_state.flash_plan_updated = True
             st.session_state._last_plan_hash = hash(st.session_state.plan_text)
             recompute_calendar_events()
-            return {"feedback": f"🧠 J’ai adapté le plan automatiquement.\n\n**Résumé** — {result.get('summary','(modifications appliquées)')}",
-                    "plan_changed": True, "calendar_changed": True}
+            return {
+                "feedback": f"🧠 J'ai adapté le plan automatiquement.\n\n**Résumé** — {result.get('summary','')}",
+                "plan_changed": True,
+                "calendar_changed": True,
+                "is_command": True
+            }
         else:
-            return {"feedback": f"⚠️ Je n’ai pas pu adapter automatiquement le plan. {result.get('summary','')}",
-                    "plan_changed": False, "calendar_changed": False}
+            return {
+                "feedback": f"⚠️ Je n'ai pas pu adapter le plan. {result.get('summary','')}",
+                "plan_changed": False,
+                "calendar_changed": False,
+                "is_command": True
+            }
 
-    return {"feedback":"Pour que j’adapte le plan automatiquement, ajoute une clé OpenAI dans la barre latérale.",
-            "plan_changed":False, "calendar_changed":False}
+    if is_plan_modification and not st.session_state.api_key:
+        return {
+            "feedback": "💡 Pour adapter automatiquement le plan, ajoute une clé OpenAI dans la barre latérale.",
+            "plan_changed": False,
+            "calendar_changed": False,
+            "is_command": True
+        }
+
+    # 4) Sinon : pas une commande spéciale → chat normal
+    return {
+        "feedback": "",
+        "plan_changed": False,
+        "calendar_changed": False,
+        "is_command": False
+    }
 
 # ===================== UI HELPERS =====================
-def space(h=12):
-    st.markdown(f"<div style='height:{h}px'></div>", unsafe_allow_html=True)
-
-# ===================== VUES =====================
-def view_landing():
-    st.title("Serge est là pour vous coacher !")
-    st.write("Votre plan personnalisé, conçu à partir de votre profil.")
-    if st.button("Débutez votre programme", use_container_width=True, key="landing_start_btn"):
-        st.session_state.step = "form"; st.rerun()
-
 def render_input(q, default=None):
-    t = q["type"]; label = q["label"]
-    if t=="text":
+    """Rend un input de questionnaire selon son type"""
+    t = q["type"]
+    label = q["label"]
+    
+    if t == "text":
         return st.text_input(label, value=default or "", key=f"in_{q['key']}")
-    if t=="number":
+    elif t == "number":
         base = q.get("min", 0)
         val = base if default in (None, "") else int(default)
-        return st.number_input(label, min_value=q.get("min",0), max_value=q.get("max",999), value=val, key=f"in_{q['key']}")
-    if t=="select":
-        opts = q["options"]; idx = opts.index(default) if default in opts else 0
+        return st.number_input(
+            label,
+            min_value=q.get("min", 0),
+            max_value=q.get("max", 999),
+            value=val,
+            key=f"in_{q['key']}"
+        )
+    elif t == "select":
+        opts = q["options"]
+        idx = opts.index(default) if default in opts else 0
         return st.selectbox(label, opts, index=idx, key=f"in_{q['key']}")
-    if t=="multiselect":
-        opts = q["options"]; default = default or []
+    elif t == "multiselect":
+        opts = q["options"]
+        default = default or []
         return st.multiselect(label, opts, default=default, key=f"in_{q['key']}")
-    if t=="slider":
-        return st.slider(label, q["min"], q["max"], value=default if default is not None else q["min"], step=q.get("step",1), key=f"in_{q['key']}")
+    elif t == "slider":
+        return st.slider(
+            label,
+            q["min"],
+            q["max"],
+            value=default if default is not None else q["min"],
+            step=q.get("step", 1),
+            key=f"in_{q['key']}"
+        )
     return st.text_input(label, value=default or "", key=f"in_{q['key']}")
 
-def view_form():
-    st.markdown("### Questionnaire — profil sportif")
-    q_i = st.session_state.q_index
-    pct = int((q_i+1)/TOTAL_Q*100)
-    st.progress(pct/100.0, text=f"Question {q_i+1} / {TOTAL_Q}")
+# ===================== WEATHER & FEATURES =====================
+def get_daily_quote() -> str:
+    """Retourne une citation motivante aléatoire"""
+    quotes = [
+        "Le succès, c'est tomber sept fois et se relever huit.",
+        "Votre corps peut tout faire. C'est votre esprit que vous devez convaincre.",
+        "La discipline est le pont entre les objectifs et l'accomplissement.",
+        "Ne comptez pas les jours, faites que les jours comptent.",
+        "Vous êtes plus fort que vous ne le pensez.",
+    ]
+    import random
+    return random.choice(quotes)
 
-    q = QUESTIONS[q_i]
-    prev_val = st.session_state.answers.get(q["key"], None)
-    ans = render_input(q, default=prev_val)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("⬅️ Précédent", disabled=(q_i==0), use_container_width=True, key=f"form_prev_{q_i}"):
-            st.session_state.answers[q["key"]] = ans
-            st.session_state.q_index = max(0, q_i-1); st.rerun()
-    with c2:
-        if q_i < TOTAL_Q-1:
-            if st.button("Suivant ➡️", use_container_width=True, key=f"form_next_{q_i}"):
-                st.session_state.answers[q["key"]] = ans
-                st.session_state.q_index = min(TOTAL_Q-1, q_i+1); st.rerun()
-        else:
-            if st.button("✅ Générer mon plan", use_container_width=True, key="form_generate_plan"):
-                st.session_state.answers[q["key"]] = ans
-                a = st.session_state.answers
-                profile = {
-                    "age": a.get("age"), "sexe": a.get("sexe"), "taille_cm": a.get("taille_cm"),
-                    "poids_kg": a.get("poids_kg"), "niveau_exp": a.get("niveau_exp"),
-                    "blessures": a.get("blessures"), "sante": a.get("sante"),
-                    "activite": a.get("activite"), "objectif_principal": a.get("objectif_principal"),
-                    "objectif_secondaire": a.get("objectif_secondaire"), "horizon": a.get("horizon"),
-                    "motivation": a.get("motivation"), "types_exos": a.get("types_exos"),
-                    "jours_sem": a.get("jours_sem"), "duree_min": a.get("duree_min"),
-                    "moment": a.get("moment"), "lieu": a.get("lieu"),
-                    "materiel": a.get("materiel"), "sommeil_h": a.get("sommeil_h"),
-                    "ville": a.get("ville"), "nutrition": a.get("nutrition")
-                }
-                plan_text = call_openai_plan(st.session_state.api_key, profile) if st.session_state.api_key else ""
-                st.session_state.plan_text = plan_text or fallback_plan(profile)
-                st.session_state._last_plan_hash = hash(st.session_state.plan_text)
-                recompute_calendar_events()
-                st.session_state.step = "dashboard"
-                st.session_state.active_card = None
-                st.rerun()
-
-# ===================== PAGES INDIVIDUELLES =====================
-def page_plan():
-    col_menu, col_content = st.columns([1, 4])
-
-    with col_menu:
-        st.markdown("### 📊 Menu"); st.markdown("---")
-        if st.button("🏠 Dashboard", key="menu_plan_home", use_container_width=True): 
-            st.session_state.page=None; st.rerun()
-        st.button("📋 Plan", key="menu_plan_plan", use_container_width=True, disabled=True)
-        if st.button("🌤️ Météo", key="menu_plan_meteo", use_container_width=True): 
-            st.session_state.page="meteo"; st.rerun()
-        if st.button("💬 Chat", key="menu_plan_chat", use_container_width=True): 
-            st.session_state.page="chat"; st.rerun()
-        if st.button("📅 Calendrier", key="menu_plan_calendar", use_container_width=True): 
-            st.session_state.page="calendar"; st.rerun()
-        if st.button("🍎 Nutrition", key="menu_plan_nutri", use_container_width=True): 
-            st.session_state.page="nutrition"; st.rerun()
-        st.markdown("---")
-        if st.button("↺ Refaire", key="menu_plan_reset", use_container_width=True):
-            st.session_state.step = "form"; st.session_state.q_index = 0; st.session_state.page = None; st.rerun()
-
-    with col_content:
-        st.markdown("## 📋 Plan d'entraînement"); st.divider()
-
-        # Barre d’actions
-        a1, a2, a3 = st.columns(3)
-        with a1:
-            if st.button("✏️ Modifier", use_container_width=True, key="plan_edit_btn"):
-                st.session_state.plan_edit_mode = not st.session_state.plan_edit_mode
-                st.rerun()
-        with a2:
-            if st.button("🔄 Régénérer (profil)", use_container_width=True, key="plan_regen_btn"):
-                _regenerate_plan_if_needed()
-                st.success("✅ Plan régénéré à partir du profil.")
-                st.rerun()
-        with a3:
-            st.download_button(
-                "💾 Télécharger", 
-                data=st.session_state.plan_text or "", 
-                file_name="plan_entrainement.md",
-                mime="text/markdown",
-                key="plan_download_btn",
-                use_container_width=True
-            )
-
-        st.divider()
-
-        # Affichage / édition
-        if st.session_state.plan_edit_mode:
-            edited = st.text_area(
-                "Plan (Markdown)", 
-                value=st.session_state.plan_text or "", 
-                height=500, 
-                key="plan_edit_area"
-            )
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("💾 Enregistrer", use_container_width=True, key="plan_save_btn"):
-                    st.session_state.plan_text = edited
-                    st.session_state._last_plan_hash = hash(st.session_state.plan_text or "")
-                    recompute_calendar_events()   # << important
-                    st.session_state.plan_edit_mode = False
-                    st.success("✅ Plan sauvegardé et calendrier mis à jour.")
-                    st.rerun()
-            with b2:
-                if st.button("❌ Annuler", use_container_width=True, key="plan_cancel_btn"):
-                    st.session_state.plan_edit_mode = False
-                    st.rerun()
-        else:
-            st.markdown(st.session_state.plan_text or "_Pas de plan._")
-
-        # Synchronise si plan modifié par ailleurs (ex: chat)
-        current_hash = hash(st.session_state.plan_text or "")
-        if st.session_state.get("_last_plan_hash") != current_hash:
-            st.session_state._last_plan_hash = current_hash
-            recompute_calendar_events()
-
-def page_meteo():
-    col_menu, col_content = st.columns([1, 4])
-    with col_menu:
-        st.markdown("### 📊 Menu"); st.markdown("---")
-        if st.button("🏠 Dashboard", key="menu_met_home", use_container_width=True): st.session_state.page=None; st.rerun()
-        if st.button("📋 Plan", key="menu_met_plan", use_container_width=True): st.session_state.page="plan"; st.rerun()
-        st.button("🌤️ Météo", key="menu_met_meteo", use_container_width=True, disabled=True)
-        if st.button("💬 Chat", key="menu_met_chat", use_container_width=True): st.session_state.page="chat"; st.rerun()
-        if st.button("📅 Calendrier", key="menu_met_calendar", use_container_width=True): st.session_state.page="calendar"; st.rerun()
-        if st.button("🍎 Nutrition", key="menu_met_nutri", use_container_width=True): st.session_state.page="nutrition"; st.rerun()
-        st.markdown("---")
-        if st.button("↺ Refaire", key="menu_met_reset", use_container_width=True):
-            st.session_state.step = "form"; st.session_state.q_index = 0; st.session_state.page = None; st.rerun()
-    with col_content:
-        st.markdown("## 🌤️ Météo"); st.divider()
-        ville = st.session_state.answers.get("ville", "Montréal")
-        duree = int(st.session_state.answers.get("duree_min", 30) or 30)
-        result = geocode_city(ville)
-        if result:
-            lat, lon, ville_complete = result
-            st.markdown(f"**📍 {ville_complete}**")
-            weather_data = get_today_weather(lat, lon)
-            if weather_data:
-                try:
-                    temp = weather_data["hourly"]["temperature_2m"][0]
-                    prec = weather_data["hourly"]["precipitation_probability"][0]
-                    col1, col2 = st.columns(2)
-                    col1.metric("🌡️ Température", f"{temp}°C")
-                    col2.metric("💧 Pluie", f"{prec}%")
-                    st.divider()
-                    st.info(weather_advice(weather_data, duree))
-                except:
-                    st.warning("Erreur données météo")
+def calculate_streak(workouts: list) -> int:
+    """Calcule la série consécutive"""
+    if not workouts:
+        return 0
+    
+    from datetime import datetime
+    sorted_workouts = sorted(workouts, key=lambda x: x.get('date', ''), reverse=True)
+    streak = 0
+    current_date = datetime.now().date()
+    
+    for workout in sorted_workouts:
+        try:
+            workout_date = datetime.strptime(workout.get('date', ''), '%Y-%m-%d').date()
+            delta = (current_date - workout_date).days
+            if delta == streak or delta == streak + 1:
+                streak += 1
+                current_date = workout_date
             else:
-                st.warning("Météo indisponible")
-        else:
-            st.error(f"Ville '{ville}' introuvable")
+                break
+        except:
+            continue
+    
+    return streak
 
-def page_chat():
-    col_menu, col_content = st.columns([1, 4])
+def get_next_workout(plan_text: str, last_completed_day: int = None) -> dict:
+    """Récupère le prochain workout en tenant compte des jours complétés"""
+    if not plan_text:
+        return None
+    
+    sessions = parse_workout_plan(plan_text)
+    if not sessions:
+        return None
+    
+    if last_completed_day is not None:
+        for session in sessions:
+            if session['day'] > last_completed_day:
+                return session
+        return sessions[0] if sessions else None
+    
+    from datetime import datetime
+    today = datetime.now()
+    day_of_week = today.weekday() + 1
+    
+    for session in sessions:
+        if session['day'] == day_of_week:
+            return session
+    
+    return sessions[0] if sessions else None
 
-    with col_menu:
-        st.markdown("### 📊 Menu"); st.markdown("---")
-        if st.button("🏠 Dashboard", key="menu_chat_home", use_container_width=True): st.session_state.page=None; st.rerun()
-        if st.button("📋 Plan", key="menu_chat_plan", use_container_width=True): st.session_state.page="plan"; st.rerun()
-        if st.button("🌤️ Météo", key="menu_chat_meteo", use_container_width=True): st.session_state.page="meteo"; st.rerun()
-        st.button("💬 Chat", key="menu_chat_chat", use_container_width=True, disabled=True)
-        if st.button("📅 Calendrier", key="menu_chat_calendar", use_container_width=True): st.session_state.page="calendar"; st.rerun()
-        if st.button("🍎 Nutrition", key="menu_chat_nutri", use_container_width=True): st.session_state.page="nutrition"; st.rerun()
-        if st.button("📊 Mes entraînements", key="menu_chat_workouts", use_container_width=True): st.session_state.page="workouts"; st.rerun()
-        st.markdown("---")
-        if st.button("↺ Refaire", key="menu_chat_reset", use_container_width=True):
-            st.session_state.step="form"; st.session_state.q_index=0; st.session_state.page=None; st.rerun()
-
-    with col_content:
-        st.markdown("## 💬 Chat Coach")
-        st.caption("Exemples: « adapte le plan pour plus de course et moins de HIIT », "
-                   "« remplace au jour 1 treadmill par course en plein air », "
-                   "« mets mes séances le matin », "
-                   "« active les rappels J1, J3, J5 », "
-                   "« date de début du programme 2025-11-05 »")
-        st.divider()
-
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-
-        user_input = st.chat_input("Parle à Serge…")
-        if user_input:
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-
-            result = handle_chat_command(user_input)
-            feedback = result["feedback"].strip()
-            plan_changed = result["plan_changed"]
-            cal_changed  = result["calendar_changed"]
-
-            if feedback:
-                st.session_state.chat_history.append({"role":"assistant","content":feedback})
-
-            if st.session_state.api_key and not feedback:
-                model_reply = call_openai_chat(st.session_state.api_key, user_input, st.session_state.answers)
-                st.session_state.chat_history.append({"role":"assistant","content":model_reply})
-            elif not feedback:
-                st.session_state.chat_history.append({"role":"assistant","content":"🙂 C'est noté."})
-
-            if plan_changed:
-                st.session_state.page = "plan"
-            elif cal_changed:
-                st.session_state.page = "calendar"
-
+def render_top_navigation(current_page=None):
+    """Navigation horizontale en haut"""
+    cols = st.columns([1, 1, 1, 1, 1, 1, 1, 1, 1])
+    
+    with cols[0]:
+        if st.button("👤 Profil", key=f"nav_{current_page}_profile", use_container_width=True, 
+                    disabled=(current_page == "profile")):
+            st.session_state.page = "profile"
+            st.rerun()
+    
+    with cols[1]:
+        if st.button("🏠 Dashboard", key=f"nav_{current_page}_home", use_container_width=True, 
+                    disabled=(current_page is None)):
+            st.session_state.page = None
+            st.rerun()
+    
+    with cols[2]:
+        if st.button("📋 Plan", key=f"nav_{current_page}_plan", use_container_width=True, 
+                    disabled=(current_page == "plan")):
+            st.session_state.page = "plan"
+            st.rerun()
+    
+    with cols[3]:
+        if st.button("🌤️ Météo", key=f"nav_{current_page}_meteo", use_container_width=True, 
+                    disabled=(current_page == "meteo")):
+            st.session_state.page = "meteo"
+            st.rerun()
+    
+    with cols[4]:
+        if st.button("💬 Chat", key=f"nav_{current_page}_chat", use_container_width=True, 
+                    disabled=(current_page == "chat")):
+            st.session_state.page = "chat"
+            st.rerun()
+    
+    with cols[5]:
+        if st.button("📅 Calendrier", key=f"nav_{current_page}_calendar", use_container_width=True, 
+                    disabled=(current_page == "calendar")):
+            st.session_state.page = "calendar"
+            st.rerun()
+    
+    with cols[6]:
+        if st.button("🍎 Nutrition", key=f"nav_{current_page}_nutrition", use_container_width=True, 
+                    disabled=(current_page == "nutrition")):
+            st.session_state.page = "nutrition"
+            st.rerun()
+    
+    with cols[7]:
+        if st.button("🏋️ Workouts", key=f"nav_{current_page}_workouts", use_container_width=True, 
+                    disabled=(current_page == "workouts")):
+            st.session_state.page = "workouts"
+            st.rerun()
+    
+    with cols[8]:
+        if st.button("🔄 Reset", key=f"nav_{current_page}_reset", use_container_width=True):
+            st.session_state.step = "form"
+            st.session_state.q_index = 0
+            st.session_state.page = None
             st.rerun()
 
-        cols = st.columns(3)
-        with cols[0]:
-            if st.button("🧹 Effacer la conversation", use_container_width=True, key="chat_clear_btn"):
-                st.session_state.chat_history = []; st.rerun()
-        with cols[1]:
-            if st.button("🔄 Régénérer le plan", use_container_width=True, key="chat_regen_btn"):
-                _regenerate_plan_if_needed()
-                st.session_state.chat_history.append({"role":"assistant","content":"🔄 Plan régénéré. Ouverture de l’onglet **Plan**."})
-                st.session_state.page="plan"; st.rerun()
-        with cols[2]:
-            if st.button("📅 Ouvrir Calendrier", use_container_width=True, key="chat_open_cal_btn"):
-                st.session_state.page="calendar"; st.rerun()
+def fallback_plan(profile: dict) -> str:
+    """Génère un plan d'entraînement basique sur 7 jours en respectant jours_sem."""
+    niveau = profile.get("niveau_exp", "Débutant") or "Débutant"
+    try:
+        jours = int(profile.get("jours_sem", 3) or 3)
+    except Exception:
+        jours = 3
+    jours = max(1, min(7, jours))
 
-def page_calendar():
-    col_menu, col_content = st.columns([1, 4])
-    with col_menu:
-        st.markdown("### 📊 Menu"); st.markdown("---")
-        if st.button("🏠 Dashboard", key="menu_cal_home", use_container_width=True): 
-            st.session_state.page=None; st.rerun()
-        if st.button("📋 Plan", key="menu_cal_plan", use_container_width=True): 
-            st.session_state.page="plan"; st.rerun()
-        if st.button("🌤️ Météo", key="menu_cal_meteo", use_container_width=True): 
-            st.session_state.page="meteo"; st.rerun()
-        st.button("📅 Calendrier", key="menu_cal_calendar", use_container_width=True, disabled=True)
-        if st.button("💬 Chat", key="menu_cal_chat", use_container_width=True): 
-            st.session_state.page="chat"; st.rerun()
-        if st.button("🍎 Nutrition", key="menu_cal_nutri", use_container_width=True): 
-            st.session_state.page="nutrition"; st.rerun()
-        st.markdown("---")
-        if st.button("↺ Refaire", key="menu_cal_reset", use_container_width=True):
-            st.session_state.step="form"; st.session_state.q_index=0; st.session_state.page=None; st.rerun()
+    duree = int(profile.get("duree_min", 45) or 45)
+    objectif = profile.get("objectif_principal", "Condition générale") or "Condition générale"
 
-    with col_content:
-        st.markdown("## 📅 Calendrier"); st.divider()
+    header = f"""# Plan d'entraînement personnalisé
 
-        picked = st.date_input(
-            "Date de début du programme",
-            value=st.session_state.get("calendar_start_date", dt.date.today()),
-            key="cal_start_input"
-        )
-        if picked != st.session_state.get("calendar_start_date"):
-            st.session_state.calendar_start_date = picked
-            recompute_calendar_events()
+**Niveau :** {niveau}  
+**Objectif :** {objectif}  
+**Fréquence :** {jours} jours/semaine  
+**Durée par séance :** {duree} min
 
-        plan_hash = hash(st.session_state.get("plan_text",""))
-        if st.session_state.get("_last_plan_hash") != plan_hash:
-            st.session_state["_last_plan_hash"] = plan_hash
-            recompute_calendar_events()
+---
+"""
 
-        events = st.session_state.get("calendar_events", [])
-        if not events:
-            st.warning("Aucune séance détectée dans le plan. Va dans l’onglet **Plan** pour le générer (ou via le chat).")
-            return
+    templates = [
+        ("Full Body", [
+            "- Échauffement: 5-10 min cardio léger",
+            "- Squats: 3 x 10-12",
+            "- Pompes (sur genoux si nécessaire): 3 x 8-10",
+            "- Fentes: 3 x 10 (chaque jambe)",
+            "- Planche: 3 x 20-30 sec",
+            "- Retour au calme: étirements 5 min"
+        ]),
+        ("Cardio + Core", [
+            "- Échauffement: 5 min",
+            "- Intervalles cardio: 20-25 min (course/vélo/rameur)",
+            "- Crunches: 3 x 15",
+            "- Mountain climbers: 3 x 20 sec",
+            "- Russian twists: 3 x 15",
+            "- Étirements: 5 min"
+        ]),
+        ("Force haut du corps", [
+            "- Échauffement: 5-10 min",
+            "- Développé couché ou pompes: 3 x 8-10",
+            "- Rowing: 3 x 10-12",
+            "- Élévations latérales: 3 x 12-15",
+            "- Gainage: 3 x 30 sec",
+            "- Étirements: 5 min"
+        ])
+    ]
 
-        if CALENDAR_AVAILABLE:
-            calendar_options = {
-                "initialView": "dayGridMonth",
-                "headerToolbar": {
-                    "left":"prev,next today",
-                    "center":"title",
-                    "right":"dayGridMonth,timeGridWeek,listWeek"
-                },
-                "height": 600,
-                "dayMaxEvents": 2
-            }
-            custom_css = ".fc-daygrid-event{white-space:normal!important;}"
-            st_calendar(events=events, options=calendar_options, custom_css=custom_css, key="cal_widget_live")
+    lines = [header]
+
+    training_days = 0
+    for day in range(1, 8):
+        if training_days < jours:
+            title, exos = templates[training_days % len(templates)]
+            lines.append(f"**Jour {day} — {title}**")
+            lines.append(f"⏱ Durée: {duree} min | 🔥 RPE: 6-7/10")
+            lines.extend(exos)
+            lines.append("\n---\n")
+            training_days += 1
         else:
-            st.info("`streamlit-calendar` non installé — affichage en tableau simple.")
-            import pandas as pd
-            tbl = []
-            for e in events:
-                tbl.append({
-                    "Date": e["start"][:10],
-                    "Heure": e["start"][11:16] + " → " + e["end"][11:16],
-                    "Titre": e["title"]
-                })
-            st.dataframe(pd.DataFrame(tbl), use_container_width=True, hide_index=True)
+            lines.append(f"**Jour {day} — Repos complet**")
+            lines.append("💤 Aucune séance prévue, concentre-toi sur le sommeil, l'hydratation et la récupération.")
+            lines.append("\n---\n")
 
-def page_nutrition():
-    col_menu, col_content = st.columns([1, 4])
-    with col_menu:
-        st.markdown("### 📊 Menu"); st.markdown("---")
-        if st.button("🏠 Dashboard", key="menu_nut_home", use_container_width=True): st.session_state.page=None; st.rerun()
-        if st.button("📋 Plan", key="menu_nut_plan", use_container_width=True): st.session_state.page="plan"; st.rerun()
-        if st.button("🌤️ Météo", key="menu_nut_meteo", use_container_width=True): st.session_state.page="meteo"; st.rerun()
-        if st.button("💬 Chat", key="menu_nut_chat", use_container_width=True): st.session_state.page="chat"; st.rerun()
-        if st.button("📅 Calendrier", key="menu_nut_calendar", use_container_width=True): st.session_state.page="calendar"; st.rerun()
-        st.button("🍎 Nutrition", key="menu_nut_nutri", use_container_width=True, disabled=True)
-        st.markdown("---")
-        if st.button("↺ Refaire", key="menu_nut_reset", use_container_width=True):
-            st.session_state.step="form"; st.session_state.q_index=0; st.session_state.page=None; st.rerun()
-    with col_content:
-        st.markdown("## 🍎 Nutrition"); st.divider()
-        if st.session_state.nutrition_plan is None:
-            with st.spinner("Génération du plan nutrition..."):
-                if st.session_state.api_key:
-                    txt = call_openai_nutrition(st.session_state.api_key, st.session_state.answers)
-                else:
-                    txt = fallback_nutrition(st.session_state.answers)
-                st.session_state.nutrition_plan = txt
+    lines.append("**Conseils généraux :**\n- Hydrate-toi bien avant, pendant et après\n- Écoute ton corps et ajuste l'intensité\n- Augmente progressivement la charge\n")
+    return "\n".join(lines)
 
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            if st.button("✏️ Modifier", use_container_width=True, key="nut_edit_btn"):
-                st.session_state.nutrition_edit_mode = not st.session_state.nutrition_edit_mode; st.rerun()
-        with c2:
-            if st.button("🔄 Régénérer", use_container_width=True, key="nut_regen_btn"):
-                with st.spinner("Régénération..."):
-                    if st.session_state.api_key:
-                        txt = call_openai_nutrition(st.session_state.api_key, st.session_state.answers)
-                    else:
-                        txt = fallback_nutrition(st.session_state.answers)
-                    st.session_state.nutrition_plan = txt
-                    st.session_state.nutrition_edit_mode = False
-                st.rerun()
-        with c3:
-            st.download_button("💾 Télécharger", data=st.session_state.nutrition_plan, file_name="plan_nutrition.txt", mime="text/plain", key="nut_download_btn", use_container_width=True)
+# ===================== MAIN APP LOGIC =====================
 
-        st.divider()
-        if st.session_state.nutrition_edit_mode:
-            st.info("✏️ Mode édition - Modifie ton plan ci-dessous")
-            edited = st.text_area("Plan nutrition", value=st.session_state.nutrition_plan, height=400, key="nut_edit_area")
-            csa, cca = st.columns(2)
-            with csa:
-                if st.button("💾 Enregistrer", use_container_width=True, key="nut_save_btn"):
-                    st.session_state.nutrition_plan = edited
-                    st.session_state.nutrition_edit_mode = False
-                    st.success("✅ Plan sauvegardé!")
-                    st.rerun()
-            with cca:
-                if st.button("❌ Annuler", use_container_width=True, key="nut_cancel_btn"):
-                    st.session_state.nutrition_edit_mode = False
-                    st.rerun()
+# Landing Page
+if st.session_state.step == "landing":
+    st.markdown('<h1 class="landing-title">🏋️ Coach Serge Pro</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="landing-subtitle">Ton coach sportif personnel propulsé par l\'IA</p>', unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("### Découvre ton potentiel")
+        st.write("📊 Plans d'entraînement personnalisés")
+        st.write("🍎 Conseils nutritionnels adaptés")
+        st.write("💬 Coach IA disponible 24/7")
+        st.write("📅 Suivi et calendrier interactif")
+        st.write("🌤️ Adaptation météo en temps réel")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if st.button("🚀 Commencer mon parcours", use_container_width=True, key="start_btn"):
+            st.session_state.step = "form"
+            st.session_state.q_index = 0
+            st.rerun()
+
+# Form / Questionnaire
+elif st.session_state.step == "form":
+    idx = st.session_state.q_index
+    
+    if idx >= TOTAL_Q:
+        st.session_state.step = "dashboard"
+        
+        profile = {k: st.session_state.answers.get(k) for k in [
+            "age", "sexe", "taille_cm", "poids_kg", "niveau_exp", "blessures", "sante",
+            "activite", "objectif_principal", "objectif_secondaire", "horizon", "motivation",
+            "types_exos", "jours_sem", "duree_min", "moment", "lieu", "materiel",
+            "sommeil_h", "ville", "nutrition"
+        ]}
+        
+        if st.session_state.api_key:
+            with st.spinner("🤖 Génération de ton plan personnalisé..."):
+                plan_text = call_openai_plan(st.session_state.api_key, profile)
+                st.session_state.plan_text = plan_text or fallback_plan(profile)
         else:
-            st.markdown(st.session_state.nutrition_plan)
-
-        space(1)
-        with st.expander("💡 Conseils nutritionnels"):
-            st.markdown("""
-**🥗 Principes de base**
-- Hydratation: 2-3L d'eau / jour
-- 5 portions de fruits/légumes
-- Protéines à chaque repas
-- Limiter les sucres ajoutés
-
-**⏰ Timing**
-- Collation pré-entrainement 1-2h avant
-- Collation post-entrainement dans les 30 min
-- Dernier repas 2-3h avant le coucher
-""")
-
-def page_workouts():
-    col_menu, col_content = st.columns([1, 4])
-    with col_menu:
-        st.markdown("### 📊 Menu"); st.markdown("---")
-        if st.button("🏠 Dashboard", key="menu_wo_home", use_container_width=True): st.session_state.page=None; st.rerun()
-        if st.button("📋 Plan", key="menu_wo_plan", use_container_width=True): st.session_state.page="plan"; st.rerun()
-        if st.button("🌤️ Météo", key="menu_wo_meteo", use_container_width=True): st.session_state.page="meteo"; st.rerun()
-        if st.button("💬 Chat", key="menu_wo_chat", use_container_width=True): st.session_state.page="chat"; st.rerun()
-        if st.button("📅 Calendrier", key="menu_wo_calendar", use_container_width=True): st.session_state.page="calendar"; st.rerun()
-        if st.button("🍎 Nutrition", key="menu_wo_nutri", use_container_width=True): st.session_state.page="nutrition"; st.rerun()
-        st.button("📊 Mes entraînements", key="menu_wo_workouts", use_container_width=True, disabled=True)
-        st.markdown("---")
-        if st.button("↺ Refaire", key="menu_wo_reset", use_container_width=True):
-            st.session_state.step="form"; st.session_state.q_index=0; st.session_state.page=None; st.rerun()
-    with col_content:
-        st.markdown("## 📊 Mes entraînements"); st.divider()
-
-        tab1, tab2 = st.tabs(["➕ Enregistrer", "📈 Statistiques"])
-        with tab1:
-            col1, col2 = st.columns(2)
-            with col1:
-                w_date = st.date_input("📅 Date", value=dt.date.today(), key="wo_date")
-                w_type = st.selectbox("🏋️ Type", ["Musculation","Cardio","HIIT","Yoga","Étirements","Sport (autre)"], key="wo_type")
-                w_dur  = st.number_input("⏱️ Durée (min)", min_value=1, max_value=300, value=45, key="wo_dur")
-            with col2:
-                w_int = st.select_slider("💪 Intensité", options=["Légère","Modérée","Élevée","Maximale"], value="Modérée", key="wo_int")
-                w_feel= st.select_slider("😊 Ressenti", options=["😫 Difficile","😐 Moyen","😊 Bien","🤩 Excellent"], value="😊 Bien", key="wo_feel")
-                w_cal = st.number_input("🔥 Calories (est.)", min_value=0, max_value=2000, value=300, key="wo_cal")
-            w_notes = st.text_area("📝 Notes", placeholder="Exercices effectués, observations...", key="wo_notes", height=100)
-            if st.button("💾 Enregistrer l'entraînement", use_container_width=True, key="wo_save"):
-                st.session_state.workout_history.append({
-                    "date": w_date.strftime("%Y-%m-%d"),
-                    "type": w_type, "duration": w_dur, "intensity": w_int,
-                    "feeling": w_feel, "calories": w_cal, "notes": w_notes
-                })
-                st.success("✅ Entraînement enregistré!"); st.rerun()
-
-        with tab2:
-            import pandas as pd
-            if len(st.session_state.workout_history)==0:
-                st.info("📊 Aucun entraînement enregistré.")
-            else:
-                total = len(st.session_state.workout_history)
-                total_dur = sum(w["duration"] for w in st.session_state.workout_history)
-                total_cal = sum(w["calories"] for w in st.session_state.workout_history)
-                avg_dur = total_dur/total
-                c1,c2,c3,c4 = st.columns(4)
-                c1.metric("🏋️ Entraînements", total)
-                c2.metric("⏱️ Temps total", f"{total_dur} min")
-                c3.metric("📊 Durée moyenne", f"{int(avg_dur)} min")
-                c4.metric("🔥 Calories totales", total_cal)
-                st.divider()
-                df = pd.DataFrame(st.session_state.workout_history)
-                df["date"] = pd.to_datetime(df["date"])
-                df = df.sort_values("date")
-                st.markdown("#### 📊 Durée des entraînements")
-                st.line_chart(df.set_index("date")[["duration"]], use_container_width=True)
-                st.markdown("#### 🏋️ Répartition par type")
-                st.bar_chart(df["type"].value_counts(), use_container_width=True)
-                st.markdown("#### 🔥 Calories brûlées par séance")
-                st.area_chart(df.set_index("date")[["calories"]], use_container_width=True)
-                st.divider()
-                st.markdown("#### 📋 Historique")
-                for i, workout in enumerate(reversed(st.session_state.workout_history)):
-                    with st.expander(f"{workout['date']} - {workout['type']} ({workout['duration']} min)"):
-                        ca, cb = st.columns(2)
-                        with ca:
-                            st.write(f"**Intensité:** {workout['intensity']}")
-                            st.write(f"**Ressenti:** {workout['feeling']}")
-                        with cb:
-                            st.write(f"**Calories:** {workout['calories']} kcal")
-                            if workout['notes']: st.write(f"**Notes:** {workout['notes']}")
-                        if st.button("🗑️ Supprimer", key=f"wo_del_{len(st.session_state.workout_history)-i-1}"):
-                            st.session_state.workout_history.pop(len(st.session_state.workout_history)-i-1); st.rerun()
-                st.divider()
-                if st.button("📥 Télécharger CSV", use_container_width=True, key="wo_download_btn"):
-                    csv = df.to_csv(index=False)
-                    st.download_button("📥 Télécharger le fichier CSV", data=csv, file_name="mes_entrainements.csv", mime="text/csv", key="wo_download_real")
-
-def show_statistics_dashboard():
-    st.markdown("## 📊 Tableau de bord"); st.markdown("---")
-    a = st.session_state.answers
-    st.markdown("### 👤 Profil")
-    c1,c2,c3,c4 = st.columns(4)
-    age = a.get("age","N/A"); poids = a.get("poids_kg","N/A"); taille = a.get("taille_cm","N/A")
-    c1.metric("Âge", f"{age} ans" if age!="N/A" else "N/A")
-    c2.metric("Poids", f"{poids} kg" if poids!="N/A" else "N/A")
-    if poids!="N/A" and taille!="N/A" and poids and taille:
-        try: imc = round(float(poids)/((float(taille)/100)**2),1)
-        except: imc = "N/A"
-    else: imc="N/A"
-    c3.metric("Taille", f"{taille} cm" if taille!="N/A" else "N/A")
-    c4.metric("IMC", f"{imc}")
-    space(1)
-    st.markdown("### 🎯 Objectifs")
-    c1,c2 = st.columns(2)
-    c1.info(f"**Objectif:** {a.get('objectif_principal','N/A')}")
-    c2.info(f"**Horizon:** {a.get('horizon','N/A')}")
-    space(1)
-    st.markdown("### 🏋️ Plan")
-    c1,c2,c3 = st.columns(3)
-    c1.metric("Jours/sem", a.get("jours_sem","N/A"))
-    dur = a.get("duree_min","N/A")
-    c2.metric("Durée/séance", f"{dur} min" if dur!="N/A" else "N/A")
-    c3.metric("Niveau", a.get("niveau_exp","N/A"))
-    space(2)
-    st.markdown("### ⚡ Actions rapides")
-    c1,c2,c3 = st.columns(3)
-    if c1.button("📋 Plan", key="qa_plan_btn", use_container_width=True):
-        st.session_state.page="plan"; st.rerun()
-    if c2.button("💬 Chat", key="qa_chat_btn", use_container_width=True):
-        st.session_state.page="chat"; st.rerun()
-    if c3.button("📅 Calendrier", key="qa_calendar_btn", use_container_width=True):
-        st.session_state.page="calendar"; st.rerun()
-
-def view_dashboard_new():
-    col_menu, col_content = st.columns([1, 4])
-    with col_menu:
-        st.markdown("### 📊 Menu"); st.markdown("---")
-        if st.button("📋 Plan",   key="menu_plan_btn",   use_container_width=True):
-            st.session_state.page = "plan";      st.rerun()
-        if st.button("🌤️ Météo", key="menu_meteo_btn",  use_container_width=True):
-            st.session_state.page = "meteo";     st.rerun()
-        if st.button("💬 Chat",   key="menu_chat_btn",   use_container_width=True):
-            st.session_state.page = "chat";      st.rerun()
-        if st.button("📅 Calendrier", key="menu_calendar_btn", use_container_width=True):
-            st.session_state.page = "calendar";  st.rerun()
-        if st.button("🍎 Nutrition",  key="menu_nutrition_btn", use_container_width=True):
-            st.session_state.page = "nutrition"; st.rerun()
-        if st.button("📊 Mes entraînements", key="menu_workouts_btn", use_container_width=True):
-            st.session_state.page = "workouts";  st.rerun()
-        st.markdown("---")
-        if st.button("↺ Refaire", key="menu_reset_btn", use_container_width=True):
-            st.session_state.step = "form"; st.session_state.q_index = 0; st.session_state.page = None; st.rerun()
-    with col_content:
-        show_statistics_dashboard()
-
-# ===================== DEBUG AIDE =====================
-DEBUG = True
-def _debug_ping():
-    st.sidebar.markdown("✅ App chargée")
-    st.sidebar.markdown(f"Step: `{st.session_state.get('step')}`  | Page: `{st.session_state.get('page')}`")
-if DEBUG:
-    _debug_ping()
-
-# ===================== ROUTAGE =====================
-try:
-    if st.session_state.step == "landing":
-        view_landing()
-    elif st.session_state.step == "form":
-        view_form()
-    elif st.session_state.step == "dashboard":
-        page = st.session_state.get("page", None)
-        if page == "plan":
-            page_plan()
-        elif page == "meteo":
-            page_meteo()
-        elif page == "chat":
-            page_chat()
-        elif page == "calendar":
-            page_calendar()
-        elif page == "nutrition":
-            page_nutrition()
-        elif page == "workouts":
-            page_workouts()
-        else:
-            view_dashboard_new()
+            st.session_state.plan_text = fallback_plan(profile)
+        
+        st.session_state._last_plan_hash = hash(st.session_state.plan_text)
+        recompute_calendar_events()
+        st.rerun()
+    
     else:
-        st.session_state.step = "landing"
-        view_landing()
-except Exception as e:
-    st.error("❌ Une exception a été levée pendant le rendu.")
-    st.exception(e)
+        q = QUESTIONS[idx]
+        
+        progress = (idx / TOTAL_Q)
+        st.markdown(f"""
+        <div class="form-progress">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span>Question {idx + 1} sur {TOTAL_Q}</span>
+                <span>{int(progress * 100)}%</span>
+            </div>
+            <div class="form-progress-bar">
+                <div class="form-progress-fill" style="width: {progress * 100}%"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"### {q['label']}")
+        if q.get("help"):
+            st.info(q["help"])
+        
+        default_val = st.session_state.answers.get(q["key"])
+        answer = render_input(q, default=default_val)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col1:
+            if idx > 0:
+                if st.button("⬅️ Précédent", use_container_width=True, key="prev_btn"):
+                    st.session_state.q_index -= 1
+                    st.rerun()
+        
+        with col3:
+            if st.button("Suivant ➡️", use_container_width=True, key="next_btn"):
+                st.session_state.answers[q["key"]] = answer
+                st.session_state.q_index += 1
+                st.rerun()
+
+# Dashboard / Main App
+elif st.session_state.step == "dashboard":
+    
+    # Page routing
+    if st.session_state.page == "profile":
+        render_top_navigation("profile")
+        st.title("👤 Mon Profil")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Informations personnelles")
+            name = st.text_input("Nom", value=st.session_state.user_name, key="profile_name")
+            email = st.text_input("Email", value=st.session_state.user_email, key="profile_email")
+            dob = st.date_input("Date de naissance", value=st.session_state.user_dob, key="profile_dob")
+            gender = st.selectbox("Genre", ["Homme", "Femme", "Autre"], 
+                                index=["Homme", "Femme", "Autre"].index(st.session_state.user_gender), 
+                                key="profile_gender")
+            
+            st.session_state.user_name = name
+            st.session_state.user_email = email
+            st.session_state.user_dob = dob
+            st.session_state.user_gender = gender
+        
+        with col2:
+            st.subheader("Objectifs")
+            goal = st.selectbox("Type d'objectif", 
+                              ["Perte de poids", "Gain musculaire", "Maintien", "Endurance"],
+                              index=["Perte de poids", "Gain musculaire", "Maintien", "Endurance"].index(st.session_state.goal_type),
+                              key="profile_goal")
+            current_w = st.number_input("Poids actuel (kg)", value=st.session_state.current_weight, key="profile_current")
+            target_w = st.number_input("Poids cible (kg)", value=st.session_state.target_weight, key="profile_target")
+            freq = st.slider("Fréquence d'entraînement (jours/sem)", 1, 7, st.session_state.training_frequency, key="profile_freq")
+            duration = st.slider("Durée par séance (min)", 15, 120, st.session_state.training_duration, key="profile_duration")
+            
+            st.session_state.goal_type = goal
+            st.session_state.current_weight = current_w
+            st.session_state.target_weight = target_w
+            st.session_state.training_frequency = freq
+            st.session_state.training_duration = duration
+        
+        if st.button("💾 Sauvegarder", use_container_width=True, key="save_profile"):
+            st.success("✅ Profil mis à jour!")
+    
+    elif st.session_state.page == "plan":
+        render_top_navigation("plan")
+        st.title("📋 Mon Plan d'Entraînement")
+        
+        if st.session_state.plan_text:
+            if st.session_state.flash_plan_updated:
+                st.success("✅ Plan mis à jour automatiquement!")
+                st.session_state.flash_plan_updated = False
+            
+            col1, col2 = st.columns([4, 1])
+            with col2:
+                if st.button("✏️ Éditer", key="edit_plan_btn"):
+                    st.session_state.plan_edit_mode = not st.session_state.plan_edit_mode
+                    st.rerun()
+            
+            if st.session_state.plan_edit_mode:
+                edited = st.text_area(
+                    "Modifie ton plan",
+                    value=st.session_state.plan_text,
+                    height=500,
+                    key="plan_editor"
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💾 Sauvegarder", use_container_width=True, key="save_plan"):
+                        st.session_state.plan_text = edited
+                        st.session_state.plan_edit_mode = False
+                        st.session_state._last_plan_hash = hash(edited)
+                        recompute_calendar_events()
+                        st.success("✅ Plan sauvegardé!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("❌ Annuler", use_container_width=True, key="cancel_plan"):
+                        st.session_state.plan_edit_mode = False
+                        st.rerun()
+            else:
+                st.markdown(st.session_state.plan_text)
+        else:
+            st.info("Aucun plan disponible. Génère-en un depuis le chat ou le dashboard.")
+    
+    elif st.session_state.page == "meteo":
+        render_top_navigation("meteo")
+        st.title("🌤️ Météo & Conseils")
+        
+        ville = st.session_state.answers.get("ville", "Montreal") or "Montreal"
+        weather = get_weather(ville)
+        
+        st.markdown(f"""
+        <div class="weather-card">
+            <h2>Météo à {ville}</h2>
+            <p class="weather-temp">{weather['temp']}°C</p>
+            <p class="weather-condition">{weather['condition']}</p>
+            <p>Ressenti: {weather['feels_like']}°C</p>
+            <p>Humidité: {weather['humidity']}%</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("### 💡 Conseils d'entraînement")
+        
+        duree = int(st.session_state.answers.get("duree_min", 45) or 45)
+        geo = geocode_city(ville)
+        
+        if geo:
+            lat, lon, full_name = geo
+            weather_json = get_today_weather(lat, lon)
+            if weather_json:
+                advice = weather_advice(weather_json, duree)
+                st.info(advice)
+        else:
+            st.warning("Impossible de récupérer les prévisions détaillées.")
+    
+    elif st.session_state.page == "chat":
+        render_top_navigation("chat")
+        st.title("💬 Chat avec Serge")
+        
+        chat_container = st.container()
+        
+        with chat_container:
+            for msg in st.session_state.chat_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                
+                if role == "user":
+                    st.markdown(f'<div class="chat-message user-message">👤 {content}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="chat-message assistant-message">🤖 {content}</div>', unsafe_allow_html=True)
+        
+        user_input = st.chat_input("Tape ton message...", key="chat_input")
+        
+        if user_input:
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            
+            cmd_result = handle_chat_command(user_input)
+            
+            if cmd_result["is_command"]:
+                response = cmd_result["feedback"]
+            else:
+                profile = st.session_state.answers
+                plan = st.session_state.plan_text
+                nutrition = st.session_state.nutrition_plan or ""
+                
+                response = call_openai_chat(
+                    st.session_state.api_key,
+                    user_input,
+                    profile,
+                    plan,
+                    nutrition
+                )
+            
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            st.rerun()
+    
+    elif st.session_state.page == "calendar":
+        render_top_navigation("calendar")
+        st.title("📅 Calendrier d'Entraînement")
+        
+        if not CALENDAR_AVAILABLE:
+            st.warning("📦 Module `streamlit-calendar` non installé. Installe-le avec : `pip install streamlit-calendar`")
+            
+            st.subheader("Sessions planifiées")
+            sessions = parse_workout_plan(st.session_state.plan_text)
+            
+            for session in sessions:
+                st.markdown(f"**Jour {session['day']} — {session['title']}**")
+                st.write(session['description'][:200] + "...")
+                st.markdown("---")
+        else:
+            start_date = st.date_input(
+                "Date de début",
+                value=st.session_state.calendar_start_date,
+                key="cal_start"
+            )
+            
+            if start_date != st.session_state.calendar_start_date:
+                st.session_state.calendar_start_date = start_date
+                recompute_calendar_events()
+                st.rerun()
+            
+            if st.button("🔄 Recalculer", key="recalc_cal"):
+                recompute_calendar_events()
+                st.success("✅ Calendrier mis à jour!")
+                st.rerun()
+            
+            events = st.session_state.calendar_events
+            
+            if events:
+                calendar_options = {
+                    "initialView": "dayGridMonth",
+                    "headerToolbar": {
+                        "left": "prev,next today",
+                        "center": "title",
+                        "right": "dayGridMonth,timeGridWeek,timeGridDay"
+                    },
+                    "selectable": True,
+                    "editable": False,
+                    "locale": "fr"
+                }
+                
+                st_calendar(events=events, options=calendar_options, key="calendar_widget")
+            else:
+                st.info("Aucun événement planifié. Génère un plan d'abord.")
+    
+    elif st.session_state.page == "nutrition":
+        render_top_navigation("nutrition")
+        st.title("🍎 Plan Nutritionnel")
+        
+        if not st.session_state.nutrition_plan:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🤖 Générer", key="gen_nutrition"):
+                    profile = st.session_state.answers
+                    
+                    if st.session_state.api_key:
+                        with st.spinner("Génération du plan nutritionnel..."):
+                            nutrition = call_openai_nutrition(st.session_state.api_key, profile)
+                            st.session_state.nutrition_plan = nutrition or fallback_nutrition(profile)
+                    else:
+                        st.session_state.nutrition_plan = fallback_nutrition(profile)
+                    
+                    st.rerun()
+            
+            st.info("Clique sur 'Générer' pour créer ton plan nutritionnel personnalisé.")
+        
+        else:
+            col1, col2 = st.columns([4, 1])
+            with col2:
+                if st.button("✏️ Éditer", key="edit_nutrition_btn"):
+                    st.session_state.nutrition_edit_mode = not st.session_state.nutrition_edit_mode
+                    st.rerun()
+            
+            if st.session_state.nutrition_edit_mode:
+                edited = st.text_area(
+                    "Modifie ton plan nutritionnel",
+                    value=st.session_state.nutrition_plan,
+                    height=500,
+                    key="nutrition_editor"
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💾 Sauvegarder", use_container_width=True, key="save_nutrition"):
+                        st.session_state.nutrition_plan = edited
+                        st.session_state.nutrition_edit_mode = False
+                        st.success("✅ Plan nutritionnel sauvegardé!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("❌ Annuler", use_container_width=True, key="cancel_nutrition"):
+                        st.session_state.nutrition_edit_mode = False
+                        st.rerun()
+            else:
+                st.markdown(st.session_state.nutrition_plan)
+    
+    elif st.session_state.page == "workouts":
+        render_top_navigation("workouts")
+        st.title("🏋️ Historique des Entraînements")
+        
+        st.subheader("➕ Ajouter une séance")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            workout_date = st.date_input("Date", value=dt.date.today(), key="workout_date")
+        
+        with col2:
+            workout_type = st.text_input("Type", placeholder="Ex: Full Body", key="workout_type")
+        
+        with col3:
+            workout_duration = st.number_input("Durée (min)", min_value=5, max_value=180, value=45, key="workout_duration")
+        
+        notes = st.text_area("Notes", placeholder="Comment s'est passée la séance?", key="workout_notes")
+        
+        if st.button("💾 Enregistrer", use_container_width=True, key="save_workout"):
+            workout = {
+                "date": workout_date.strftime("%Y-%m-%d"),
+                "type": workout_type,
+                "duration": workout_duration,
+                "notes": notes
+            }
+            st.session_state.workout_history.append(workout)
+            st.success("✅ Séance enregistrée!")
+            st.rerun()
+        
+        st.markdown("---")
+        st.subheader("📊 Historique")
+        
+        if st.session_state.workout_history:
+            for i, w in enumerate(reversed(st.session_state.workout_history)):
+                with st.expander(f"{w['date']} — {w['type']} ({w['duration']} min)"):
+                    st.write(f"**Notes:** {w['notes']}")
+                    
+                    if st.button("🗑️ Supprimer", key=f"del_workout_{i}"):
+                        st.session_state.workout_history.remove(w)
+                        st.rerun()
+        else:
+            st.info("Aucune séance enregistrée.")
+    
+    else:
+        # Dashboard principal
+        render_top_navigation(None)
+        
+        st.markdown(f"# 👋 Salut, {st.session_state.user_name}!")
+        
+        current_date = dt.datetime.now().strftime("%A %d %B %Y")
+        st.markdown(f"<p style='color: #666;'>{current_date}</p>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        completed = len(st.session_state.workout_history)
+        streak = calculate_streak(st.session_state.workout_history)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="stat-card">
+                <p class="stat-number">{completed}</p>
+                <p class="stat-label">Séances complétées</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="stat-card">
+                <p class="stat-number">{streak}</p>
+                <p class="stat-label">Série actuelle</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            ville = st.session_state.answers.get("ville", "Montreal") or "Montreal"
+            weather = get_weather(ville)
+            
+            st.markdown(f"""
+            <div class="stat-card">
+                <p class="stat-number">{weather['temp']}°C</p>
+                <p class="stat-label">Météo à {ville}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col_left, col_right = st.columns([2, 1])
+        
+        with col_left:
+            st.subheader("📋 Prochain entraînement")
+            
+            next_workout = get_next_workout(st.session_state.plan_text, st.session_state.last_completed_day)
+            
+            if next_workout:
+                st.markdown(f"""
+                <div class="custom-card">
+                    <h3>{next_workout['title']}</h3>
+                    <p>{next_workout['description'][:200]}...</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button("✅ Marquer comme complété", key="complete_workout"):
+                    workout = {
+                        "date": dt.date.today().strftime("%Y-%m-%d"),
+                        "type": next_workout['title'],
+                        "duration": int(st.session_state.answers.get("duree_min", 45) or 45),
+                        "notes": "Séance complétée"
+                    }
+                    st.session_state.workout_history.append(workout)
+                    st.session_state.last_completed_day = next_workout['day']
+                    st.success("🎉 Bravo! Séance enregistrée!")
+                    st.rerun()
+            else:
+                st.info("Aucun entraînement planifié aujourd'hui.")
+        
+        with col_right:
+            st.subheader("💪 Motivation")
+            quote = get_daily_quote()
+            st.markdown(f"""
+            <div class="quote-card">
+                "{quote}"
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            st.subheader("⚡ Actions rapides")
+            
+            if st.button("📋 Voir mon plan", use_container_width=True, key="quick_plan"):
+                st.session_state.page = "plan"
+                st.rerun()
+            
+            if st.button("💬 Parler au coach", use_container_width=True, key="quick_chat"):
+                st.session_state.page = "chat"
+                st.rerun()
+            
+            if st.button("🍎 Nutrition", use_container_width=True, key="quick_nutrition"):
+                st.session_state.page = "nutrition"
+                st.rerun()
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        if st.session_state.workout_history:
+            st.subheader("📊 Activité récente")
+            
+            recent = st.session_state.workout_history[-5:]
+            
+            for w in reversed(recent):
+                cols = st.columns([2, 2, 1])
+                with cols[0]:
+                    st.write(f"**{w['date']}**")
+                with cols[1]:
+                    st.write(f"{w['type']}")
+                with cols[2]:
+                    st.write(f"{w['duration']} min")
+        else:
+            st.info("Aucune activité récente.")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("🎯 Progression vers l'objectif")
+        
+        current = st.session_state.current_weight
+        target = st.session_state.target_weight
+        diff = current - target
+        
+        if diff > 0:
+            action = "perdre"
+        elif diff < 0:
+            action = "gagner"
+        else:
+            action = "maintenir"
+        
+        st.write(f"Objectif: {abs(diff):.1f} kg à {action}")
+        
+        if diff != 0:
+            # Progression non calculable sans poids de départ : ici on affiche un placeholder
+            st.progress(0.0)
