@@ -34,6 +34,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ===================== OPENAI KEY HELPER =====================
+def get_initial_api_key() -> str:
+    """
+    Récupère la clé OpenAI dans cet ordre :
+    1) st.secrets["OPENAI_API_KEY"] (Streamlit Cloud / .streamlit/secrets.toml)
+    2) Variable d'environnement OPENAI_API_KEY
+    """
+    key = ""
+
+    # 1) Secrets Streamlit (Cloud ou secrets.toml local)
+    try:
+        if "OPENAI_API_KEY" in st.secrets:
+            key = st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        # st.secrets peut ne pas exister en local si non configuré
+        pass
+
+    # 2) Fallback sur l'environnement
+    if not key:
+        key = os.getenv("OPENAI_API_KEY", "")
+
+    return key
+
 # ===================== PAGE CONFIG =====================
 st.set_page_config(
     page_title="Coach IA – Serge Pro Edition",
@@ -112,7 +135,6 @@ st.markdown("""
         color: #666;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin-top: 0.5rem;
     }
     
     /* Weather Card */
@@ -339,8 +361,8 @@ def _init_state():
         "nutrition_plan": None,
         "nutrition_edit_mode": False,
         
-        # API (clé lue via env var ou sidebar)
-        "api_key": os.getenv("OPENAI_API_KEY", ""),
+        # API (clé lue via secrets/env ou overridée via la sidebar)
+        "api_key": get_initial_api_key(),
         
         # Profil
         "user_name": "Athlète",
@@ -413,6 +435,7 @@ def _init_state():
             logger.debug(f"Initialized state: {k}")
 
 _init_state()
+
 
 # ===================== WHATSAPP FUNCTIONS =====================
 def send_whatsapp_text_message(to_number: str, message: str) -> bool:
